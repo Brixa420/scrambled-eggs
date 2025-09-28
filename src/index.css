@@ -1,0 +1,230 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(168, 85, 247, 0.5);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(192, 132, 252, 0.7);
+}
+
+/* Custom animations */
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+  100% { transform: translateY(0px); }
+}
+
+@keyframes glow {
+  0% { box-shadow: 0 0 5px rgba(168, 85, 247, 0.5); }
+  50% { box-shadow: 0 0 20px rgba(168, 85, 247, 0.8); }
+  100% { box-shadow: 0 0 5px rgba(168, 85, 247, 0.5); }
+}
+
+/* Custom classes */
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.glow-effect {
+  animation: glow 3s ease-in-out infinite;
+}
+
+/* Custom scrollbar for Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(168, 85, 247, 0.5) rgba(0, 0, 0, 0.2);
+}
+
+/* Smooth transitions */
+* {
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+}
+
+/* Selection styling */
+::selection {
+  background: rgba(168, 85, 247, 0.3);
+  color: white;
+}
+
+/* Custom focus styles */
+*:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.5);
+  border-radius: 0.25rem;
+}
+
+/* Custom placeholder styling */
+::placeholder {
+  color: rgba(192, 132, 252, 0.6);
+  opacity: 1;
+}
+
+/* Custom scrollbar for WebKit browsers */
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: rgba(168, 85, 247, 0.5);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Custom scrollbar for Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(168, 85, 247, 0.5) rgba(0, 0, 0, 0.1);
+}
+
+/* Custom selection */
+::selection {
+  background: rgba(168, 85, 247, 0.3);
+  color: white;
+}
+
+/* Custom focus-visible */
+*:focus-visible {
+  outline: 2px solid rgba(168, 85, 247, 0.5);
+  outline-offset: 2px;
+}
+
+/* Custom scroll snap */
+.scroll-snap {
+  scroll-snap-type: y mandatory;
+}
+
+.scroll-snap > * {
+  scroll-snap-align: start;
+}
+
+/* Custom backdrop blur */
+.backdrop-blur {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* Custom gradient text */
+.gradient-text {
+  @apply bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-600;
+}
+
+/* Custom card */
+.card {
+  @apply bg-gradient-to-br from-purple-900/50 to-purple-950/80 backdrop-blur-sm border border-purple-800/50 rounded-xl p-6 shadow-xl;
+}
+
+/* Custom button */
+.btn {
+  @apply px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 justify-center;
+}
+
+.btn-primary {
+  @apply bg-gradient-to-r from-purple-600 to-purple-800 text-white hover:from-purple-500 hover:to-purple-700 shadow-lg hover:shadow-purple-500/20;
+}
+
+.btn-secondary {
+  @apply bg-purple-900/50 text-purple-200 border border-purple-700 hover:bg-purple-800/50 hover:border-purple-600;
+}
+
+/* Custom input */
+.input {
+  @apply bg-black/20 border border-purple-900/50 rounded-lg px-4 py-2 text-white placeholder-purple-400/70 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-transparent transition-all duration-200;
+}
+
+/* Custom scrollbar for the chat */
+.chat-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(168, 85, 247, 0.5) transparent;
+}
+
+.chat-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.chat-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(168, 85, 247, 0.5);
+  border-radius: 4px;
+}
+
+/* Custom animation for message bubbles */
+@keyframes messageIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message-enter {
+  animation: messageIn 0.3s ease-out forwards;
+}
+
+/* Custom pulse animation for active states */
+.animate-pulse-slow {
+  animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Custom glow effect */
+.glow {
+  box-shadow: 0 0 15px rgba(168, 85, 247, 0.5);
+}
+
+/* Custom transition for modals */
+.modal-enter {
+  opacity: 0;
+  transform: scale(0.95);
+}
+
+.modal-enter-active {
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity 200ms, transform 200ms;
+}
+
+.modal-exit {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.modal-exit-active {
+  opacity: 0;
+  transform: scale(0.95);
+  transition: opacity 200ms, transform 200ms;
+}
+
+/* Custom tooltip */
+.tooltip {
+  @apply invisible absolute;
+}
+
+.has-tooltip:hover .tooltip {
+  @apply visible z-50;
+}

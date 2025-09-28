@@ -420,25 +420,78 @@
                 log(`Error toggling video: ${err.message}`, 'error');
             }
         }
+        // Reconnect to peer
+        async function reconnectPeer(peerConnection) {
+            if (peerConnection.connectionState === 'connected') return;
+            
+            try {
+                log('Attempting to reconnect peer...');
+                const offer = await peerConnection.createOffer({
+                    iceRestart: true
+                });
+                await peerConnection.setLocalDescription(offer);
+                
+                // Send the new offer
+                sendSignal({
+                    type: 'offer',
+                    sdp: peerConnection.localDescription,
+                    from: currentTab,
+                    to: peerTab
+                });
+            } catch (error) {
+                log(`Reconnection failed: ${error.message}`, 'error');
+            }
+        }
+
         // Create peer connection
         function createPeerConnection() {
             try {
-                log('Creating peer connection...');
-                
+                log('Creating peer connection with enhanced configuration');
                 const configuration = {
                     iceServers: [
                         { urls: 'stun:stun.l.google.com:19302' },
                         { urls: 'stun:stun1.l.google.com:19302' },
-                        { urls: 'stun:stun2.l.google.com:19302' }
-                    ]
+                        { urls: 'stun:stun2.l.google.com:19302' },
+                        { urls: 'stun:stun3.l.google.com:19302' },
+                        { urls: 'stun:stun4.l.google.com:19302' },
+                        // Add TURN server configuration (you'll need to replace with your own TURN server)
+                        // {
+                        //     urls: 'turn:your-turn-server.com:3478',
+                        //     username: 'username',
+                        //     credential: 'credential'
+                        // }
+                    ],
+                    iceTransportPolicy: 'all',
+                    bundlePolicy: 'max-bundle',
+                    rtcpMuxPolicy: 'require',
+                    iceCandidatePoolSize: 10,
+                    sdpSemantics: 'unified-plan'
                 };
                 
-                peerConnection = new RTCPeerConnection(configuration);
+                const peerConnection = new RTCPeerConnection(configuration);
                 
-                // Set up event handlers for the ICE negotiation process
+                // Add connection state change handler
+                peerConnection.onconnectionstatechange = () => {
+                    log(`Connection state changed to: ${peerConnection.connectionState}`);
+                    
+                    switch (peerConnection.connectionState) {
+                        case 'connected':
+                            log('Successfully connected to peer');
+                            break;
+                        case 'disconnected':
+                        case 'failed':
+                            log('Connection lost, attempting to reconnect...', 'warn');
+                            setTimeout(() => reconnectPeer(peerConnection), 2000);
+                            break;
+                        case 'closed':
+                            log('Connection closed');
+                            break;
+                    }
+                };
+                
+                // Handle ICE candidate events
                 peerConnection.onicecandidate = (event) => {
                     if (event.candidate) {
-                        log('New ICE candidate found', 'debug');
                         // Send the candidate to the remote peer
                         sendSignal({
                             type: 'candidate',
@@ -449,6 +502,7 @@
                     } else {
                         log('All ICE candidates have been sent', 'debug');
                     }
+                };
                 };
                 
                 peerConnection.oniceconnectionstatechange = () => {
