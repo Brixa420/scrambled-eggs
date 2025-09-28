@@ -1,0 +1,32 @@
+/* Custom styles for Scrambled Eggs documentation */
+
+/* Make the page content wider */
+.wy-nav-content {
+    max-width: 1200px !important;
+}
+
+/* Style for code blocks */
+.highlight {
+    background: #f8f8f8;
+    border: 1px solid #e1e4e5;
+    border-radius: 4px;
+    margin: 1em 0;
+    padding: 0.5em;
+}
+
+/* Style for API documentation */
+.py.class, .py.function, .py.method {
+    margin-bottom: 2em;
+    padding-bottom: 1em;
+    border-bottom: 1px solid #e1e4e5;
+}
+
+/* Style for parameters */
+.field-list dt {
+    font-weight: bold;
+    margin-top: 0.5em;
+}
+
+.field-list dd {
+    margin-bottom: 1em;
+}

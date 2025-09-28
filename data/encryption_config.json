@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "current_key_id": "key_20250928_022238",
+  "key_storage": "C:\\Users\\Admin\\Desktop\\scrambled-eggs\\data\\keys",
+  "key_rotation_days": 90,
+  "key_history_size": 3,
+  "created_at": "2025-09-28T02:22:38.262358",
+  "encryption_algorithm": "AES-256-GCM",
+  "key_derivation": {
+    "algorithm": "PBKDF2-HMAC-SHA256",
+    "iterations": 100000,
+    "salt_length": 16
+  }
+}

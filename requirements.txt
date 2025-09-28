@@ -1,0 +1,74 @@
+# Core dependencies
+cryptography>=40.0.0
+argon2-cffi>=21.3.0
+python-dotenv>=1.0.0
+psutil>=5.9.0  # For system monitoring
+pywin32>=305; sys_platform == 'win32'  # Windows-specific functionality
+python-json-logger>=2.0.0  # For structured logging
+pyotp>=2.8.0  # For two-factor authentication
+bcrypt>=4.0.1  # For password hashing
+
+# Web Framework
+Flask>=2.0.0
+Flask-SQLAlchemy>=3.0.0
+Flask-Migrate>=4.0.0
+Flask-WTF>=1.1.1  # For CSRF protection
+Flask-Limiter>=2.8.0  # For rate limiting
+Flask-Talisman>=1.0.0  # For security headers
+Flask-CORS>=3.0.10  # For CORS configuration
+Flask-JWT-Extended>=4.5.2  # For JWT authentication
+Werkzeug>=2.0.0  # WSGI web application library
+
+# Tor Networking
+stem>=1.8.0  # For Tor control
+pysocks>=1.7.1  # SOCKS proxy support
+txtorcon>=22.0.0  # High-level Tor control
+requests[socks]>=2.28.0  # For making requests over Tor
+
+# Database
+SQLAlchemy>=2.0.0
+alembic>=1.11.0  # For database migrations
+psycopg2-binary>=2.9.0  # PostgreSQL adapter
+
+# Security Dependencies
+pycryptodome>=3.18.0  # Cryptographic library
+python-jose[cryptography]>=3.3.0  # JWT implementation
+passlib[bcrypt]>=1.7.4  # Password hashing
+python-keycloak>=2.10.0  # For OAuth/OpenID Connect
+python-multipart>=0.0.5  # For form data parsing
+
+# Monitoring and Metrics
+prometheus-client>=0.16.0  # For metrics
+gunicorn>=20.1.0  # Production WSGI server
+gevent>=21.12.0  # For async workers
+sentry-sdk[flask]>=1.15.0  # Error tracking
+
+# Task Scheduling
+APScheduler>=3.10.0  # For scheduled tasks
+python-crontab>=3.0.0  # For cron-like scheduling
+
+# Security Extras
+keyring>=23.0.0  # For secure credential storage
+email-validator>=1.3.1  # For email validation
+python-slugify>=6.1.2  # For secure filename generation
+python-magic>=0.4.27  # For MIME type checking
+Pillow>=9.0.0  # For image validation
+python-dateutil>=2.8.2  # For token expiration
+
+# Development dependencies
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.1
+pytest-asyncio>=0.21.0
+black>=23.7.0
+isort>=5.12.0
+flake8>=6.0.0
+mypy>=1.4.0
+types-python-dateutil>=2.8.19.7
+types-pyyaml>=6.0.12.9
+safety>=2.3.0  # For checking package vulnerabilities
+bandit>=1.7.4  # For security scanning
+pytest-flask>=1.2.0  # For Flask testing
+factory-boy>=3.2.0  # For test fixtures
+freezegun>=1.2.0  # For time-based testing
+responses>=0.23.0  # For mocking HTTP requests

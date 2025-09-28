@@ -1,0 +1,18 @@
+File Shared With You
+
+Hello,
+
+{{ shared_by }} has shared a file with you on {{ app_name }}.
+
+File: {{ filename }}
+
+You can download the file using this link:
+{{ download_url }}
+
+For security reasons, this link may expire. If you have trouble accessing the file, please contact {{ shared_by }} directly.
+
+Thanks,
+The {{ app_name }} Team
+
+---
+This is an automated message. Please do not reply to this email.

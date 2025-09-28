@@ -1,0 +1,22 @@
+Welcome to {{ app_name }}, {{ username }}!
+
+Hello {{ username }},
+
+Thank you for joining {{ app_name }}! We're excited to have you on board.
+
+With {{ app_name }}, you can:
+- Securely share files with anyone
+- Set expiration dates and download limits
+- Track your file downloads in real-time
+- And much more!
+
+To get started, log in to your account and upload your first file. If you have any questions or need help, don't hesitate to reach out to our support team at {{ support_email }}.
+
+Log in to your dashboard: {{ url_for('main.dashboard', _external=True) }}
+
+Thanks again for joining us!
+
+Best regards,
+The {{ app_name }} Team
+
+P.S. Follow us on social media for updates and tips!

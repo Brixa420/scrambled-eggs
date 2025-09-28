@@ -1,0 +1,29 @@
+{% extends "emails/base.html" %}
+
+{% block title %}{{ shared_by }} shared a file with you - {{ app_name }}{% endblock %}
+
+{% block header %}File Shared With You{% endblock %}
+
+{% block content %}
+    <p>Hello,</p>
+    
+    <p><strong>{{ shared_by }}</strong> has shared a file with you on {{ app_name }}.</p>
+    
+    <div style="background-color: #f8f9fa; border-left: 4px solid #4CAF50; padding: 12px 20px; margin: 20px 0;">
+        <p style="margin: 0;"><strong>File:</strong> {{ filename }}</p>
+    </div>
+    
+    <p>You can download the file by clicking the button below:</p>
+    
+    <p style="text-align: center;">
+        <a href="{{ download_url }}" class="button">Download File</a>
+    </p>
+    
+    <p>For security reasons, this link may expire. If you have trouble accessing the file, please contact {{ shared_by }} directly.</p>
+    
+    <p>Thanks,<br>The {{ app_name }} Team</p>
+    
+    <p style="font-size: 0.9em; color: #777;">
+        <em>This is an automated message. Please do not reply to this email.</em>
+    </p>
+{% endblock %}

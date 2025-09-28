@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scrambled Eggs - Secure P2P Chat</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/chat.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+</head>
+<body>
+    <div class="chat-container">
+        <!-- Sidebar -->
+        <div class="chat-sidebar">
+            <!-- User Info -->
+            <div class="user-info">
+                <div class="avatar" id="userAvatar">{{ user_id[0]|upper }}</div>
+                <div class="username">{{ user_id }}</div>
+            </div>
+            
+            <!-- Online Users -->
+            <div class="online-users">
+                <div class="section-title">Online Users</div>
+                <div class="user-list" id="userList">
+                    <!-- Users will be populated by JavaScript -->
+                    <div class="loading">Loading users...</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Main Chat Area -->
+        <div class="chat-main">
+            <!-- Chat Header -->
+            <div class="chat-header">
+                <div class="chat-title">Scrambled Eggs Chat</div>
+                <div class="chat-actions">
+                    <button id="startVideoCall" class="btn-icon" title="Start Video Call">
+                        <i class="fas fa-video"></i>
+                    </button>
+                    <button id="startVoiceCall" class="btn-icon" title="Start Voice Call">
+                        <i class="fas fa-phone"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Chat Messages -->
+            <div class="chat-messages" id="chatMessages">
+                <div class="welcome-message">
+                    <h2>Welcome to Scrambled Eggs Chat</h2>
+                    <p>Select a user to start a secure P2P conversation.</p>
+                    <p>All messages are end-to-end encrypted.</p>
+                </div>
+            </div>
+            
+            <!-- Chat Input -->
+            <div class="chat-input-container" style="display: none;">
+                <div class="typing-indicator" id="typingIndicator"></div>
+                <div class="input-group">
+                    <textarea 
+                        id="messageInput" 
+                        placeholder="Type a secure message..."
+                        rows="1"
+                        autocomplete="off"
+                    ></textarea>
+                    <button id="sendMessage" class="send-button">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+                <div class="chat-options">
+                    <button class="btn-icon" id="attachFile" title="Send File">
+                        <i class="fas fa-paperclip"></i>
+                    </button>
+                    <button class="btn-icon" id="toggleEncryption" title="Toggle Encryption" class="active">
+                        <i class="fas fa-lock"></i>
+                    </button>
+                    <button class="btn-icon" id="emojiPicker" title="Emoji">
+                        <i class="far fa-smile"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Call Modal -->
+    <div class="modal" id="callModal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="callTitle">Incoming Call</h3>
+                <button class="close-btn" id="closeModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="caller-info">
+                    <div class="caller-avatar" id="callerAvatar"></div>
+                    <div class="caller-name" id="callerName"></div>
+                    <div class="call-status" id="callStatus">Connecting...</div>
+                </div>
+                <div class="call-controls">
+                    <button class="btn-call" id="endCall">
+                        <i class="fas fa-phone-slash"></i>
+                    </button>
+                    <button class="btn-call" id="toggleVideo" style="display: none;">
+                        <i class="fas fa-video"></i>
+                    </button>
+                    <button class="btn-call" id="toggleMute" style="display: none;">
+                        <i class="fas fa-microphone"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- File Preview Modal -->
+    <div class="modal" id="filePreviewModal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Send File</h3>
+                <button class="close-btn" id="closeFilePreview">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="filePreview"></div>
+                <div class="file-actions">
+                    <button class="btn" id="sendFile">Send</button>
+                    <button class="btn btn-secondary" id="cancelSend">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.min.js"></script>
+    <script src="{{ url_for('static', filename='js/webrtc/webrtc-manager.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/chat/chat-manager.js') }}"></script>
+    <script>
+        // Initialize the chat when the DOM is loaded
+        document.addEventListener('DOMContentLoaded', function() {
+            // Get the user ID from the template
+            const userId = '{{ user_id }}';
+            
+            // Connect to the Socket.IO server
+            const socket = io();
+            
+            // Initialize the chat manager
+            const chatManager = new ChatManager(socket, userId, document.querySelector('.chat-container'));
+            
+            // Handle window close
+            window.addEventListener('beforeunload', () => {
+                socket.emit('user_disconnect');
+            });
+            
+            // Initialize WebRTC manager
+            const webrtcManager = new WebRTCManager(socket, userId);
+            
+            // Handle call buttons
+            document.getElementById('startVideoCall')?.addEventListener('click', () => {
+                const peerId = chatManager.getActiveChat();
+                if (peerId) {
+                    webrtcManager.startCall(peerId, true);
+                }
+            });
+            
+            document.getElementById('startVoiceCall')?.addEventListener('click', () => {
+                const peerId = chatManager.getActiveChat();
+                if (peerId) {
+                    webrtcManager.startCall(peerId, false);
+                }
+            });
+            
+            // Handle call controls
+            document.getElementById('endCall')?.addEventListener('click', () => {
+                webrtcManager.endCall();
+                document.getElementById('callModal').style.display = 'none';
+            });
+            
+            // Handle file attachment
+            const fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.style.display = 'none';
+            document.body.appendChild(fileInput);
+            
+            document.getElementById('attachFile')?.addEventListener('click', () => {
+                fileInput.click();
+            });
+            
+            fileInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                // Show file preview
+                const preview = document.getElementById('filePreview');
+                preview.innerHTML = '';
+                
+                if (file.type.startsWith('image/')) {
+                    const img = document.createElement('img');
+                    img.src = URL.createObjectURL(file);
+                    img.style.maxWidth = '100%';
+                    img.style.maxHeight = '300px';
+                    preview.appendChild(img);
+                } else {
+                    const icon = document.createElement('i');
+                    icon.className = 'fas fa-file-alt fa-5x';
+                    preview.appendChild(icon);
+                    
+                    const fileName = document.createElement('div');
+                    fileName.textContent = file.name;
+                    fileName.style.marginTop = '10px';
+                    preview.appendChild(fileName);
+                }
+                
+                document.getElementById('filePreviewModal').style.display = 'flex';
+            });
+            
+            // Handle send file
+            document.getElementById('sendFile')?.addEventListener('click', () => {
+                const peerId = chatManager.getActiveChat();
+                if (!peerId) return;
+                
+                const file = fileInput.files[0];
+                if (!file) return;
+                
+                // TODO: Implement file transfer
+                console.log(`Sending file ${file.name} to ${peerId}`);
+                
+                // Close the modal
+                document.getElementById('filePreviewModal').style.display = 'none';
+                fileInput.value = '';
+            });
+            
+            // Handle cancel send
+            document.getElementById('cancelSend')?.addEventListener('click', () => {
+                document.getElementById('filePreviewModal').style.display = 'none';
+                fileInput.value = '';
+            });
+            
+            // Handle modal close buttons
+            document.querySelectorAll('.close-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    this.closest('.modal').style.display = 'none';
+                });
+            });
+            
+            // Close modal when clicking outside
+            window.addEventListener('click', (e) => {
+                if (e.target.classList.contains('modal')) {
+                    e.target.style.display = 'none';
+                }
+            });
+        });
+    </script>
+</body>
+</html>

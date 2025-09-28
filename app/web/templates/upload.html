@@ -1,0 +1,599 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Files - Scrambled Eggs{% endblock %}
+
+{% block extra_css %}
+<style>
+    .upload-container {
+        border: 2px dashed #ccc;
+        border-radius: 8px;
+        padding: 3rem;
+        text-align: center;
+        transition: all 0.3s ease;
+        background-color: #f8f9fa;
+        cursor: pointer;
+    }
+    
+    .upload-container:hover, .upload-container.dragover {
+        border-color: #0d6efd;
+        background-color: #e9f0ff;
+    }
+    
+    .upload-icon {
+        font-size: 3rem;
+        color: #6c757d;
+        margin-bottom: 1rem;
+    }
+    
+    .file-preview {
+        margin-top: 2rem;
+        display: none;
+    }
+    
+    .file-item {
+        display: flex;
+        align-items: center;
+        padding: 0.75rem 1.25rem;
+        background-color: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        margin-bottom: 0.5rem;
+    }
+    
+    .file-icon {
+        font-size: 1.5rem;
+        margin-right: 1rem;
+        color: #6c757d;
+    }
+    
+    .file-info {
+        flex-grow: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    
+    .file-name {
+        font-weight: 500;
+        margin-bottom: 0.25rem;
+    }
+    
+    .file-size {
+        font-size: 0.8rem;
+        color: #6c757d;
+    }
+    
+    .file-actions {
+        margin-left: 1rem;
+    }
+    
+    .progress {
+        height: 6px;
+        margin-top: 0.5rem;
+    }
+    
+    .encryption-options {
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin-top: 2rem;
+    }
+    
+    .recipient-input {
+        position: relative;
+    }
+    
+    .recipient-tag {
+        display: inline-flex;
+        align-items: center;
+        background-color: #e9ecef;
+        border-radius: 16px;
+        padding: 0.25rem 0.75rem;
+        margin: 0.25rem;
+    }
+    
+    .recipient-tag .remove-recipient {
+        margin-left: 0.5rem;
+        cursor: pointer;
+        color: #6c757d;
+    }
+    
+    .recipient-tag .remove-recipient:hover {
+        color: #dc3545;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h4 class="mb-0"><i class="bi bi-cloud-arrow-up"></i> Upload Files</h4>
+            </div>
+            <div class="card-body">
+                <form id="uploadForm" enctype="multipart/form-data">
+                    <div id="dropArea" class="upload-container">
+                        <input type="file" id="fileInput" class="d-none" multiple>
+                        <div class="upload-icon">
+                            <i class="bi bi-cloud-arrow-up"></i>
+                        </div>
+                        <h4>Drag & Drop files here</h4>
+                        <p class="text-muted">or click to browse files</p>
+                        <small class="text-muted">Maximum file size: 10GB</small>
+                    </div>
+                    
+                    <div id="filePreview" class="file-preview">
+                        <h5 class="mt-4 mb-3">Selected Files</h5>
+                        <div id="fileList">
+                            <!-- Files will be added here dynamically -->
+                        </div>
+                    </div>
+                    
+                    <div class="encryption-options">
+                        <h5><i class="bi bi-shield-lock"></i> Security Options</h5>
+                        <div class="row mt-3">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="encryptionType" class="form-label">Encryption Level</label>
+                                    <select class="form-select" id="encryptionType">
+                                        <option value="standard" selected>Standard (AES-256-GCM)</option>
+                                        <option value="high">High (AES-256-GCM + ECDH)</option>
+                                        <option value="maximum">Maximum (Multi-layer with fail-safe)</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="selfDestruct" checked>
+                                        <label class="form-check-label" for="selfDestruct">
+                                            Auto-delete after download
+                                        </label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="passwordProtect">
+                                        <label class="form-check-label" for="passwordProtect">
+                                            Password protect
+                                        </label>
+                                    </div>
+                                    <div id="passwordField" class="mt-2" style="display: none;">
+                                        <input type="password" class="form-control" id="filePassword" placeholder="Enter password">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="expiryTime" class="form-label">Link Expiration</label>
+                                    <select class="form-select" id="expiryTime">
+                                        <option value="1h">1 Hour</option>
+                                        <option value="6h">6 Hours</option>
+                                        <option value="24h" selected>24 Hours</option>
+                                        <option value="7d">7 Days</option>
+                                        <option value="30d">30 Days</option>
+                                        <option value="never">Never</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="downloadLimit" class="form-label">Max Downloads</label>
+                                    <input type="number" class="form-control" id="downloadLimit" min="1" value="1">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
+                        <button type="button" class="btn btn-outline-secondary me-md-2" id="cancelUpload">
+                            <i class="bi bi-x-circle"></i> Cancel
+                        </button>
+                        <button type="submit" class="btn btn-primary" id="startUpload" disabled>
+                            <i class="bi bi-upload"></i> Start Upload
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-arrow-up-circle"></i> Upload Queue</h5>
+            </div>
+            <div class="card-body">
+                <div id="uploadQueue">
+                    <div class="text-center text-muted py-4" id="queueEmpty">
+                        <i class="bi bi-inbox" style="font-size: 2rem;"></i>
+                        <p class="mt-2">No files in queue</p>
+                    </div>
+                    <!-- Upload queue items will be added here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// File upload handling
+document.addEventListener('DOMContentLoaded', function() {
+    const dropArea = document.getElementById('dropArea');
+    const fileInput = document.getElementById('fileInput');
+    const fileList = document.getElementById('fileList');
+    const filePreview = document.getElementById('filePreview');
+    const uploadForm = document.getElementById('uploadForm');
+    const startUploadBtn = document.getElementById('startUpload');
+    const cancelUploadBtn = document.getElementById('cancelUpload');
+    const uploadQueue = document.getElementById('uploadQueue');
+    const queueEmpty = document.getElementById('queueEmpty');
+    const passwordProtect = document.getElementById('passwordProtect');
+    const passwordField = document.getElementById('passwordField');
+    
+    let files = [];
+    let uploadInProgress = false;
+    
+    // Toggle password field
+    passwordProtect.addEventListener('change', function() {
+        passwordField.style.display = this.checked ? 'block' : 'none';
+    });
+    
+    // Handle drag over
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropArea.addEventListener(eventName, preventDefaults, false);
+    });
+    
+    function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    
+    // Highlight drop area when item is dragged over it
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropArea.addEventListener(eventName, highlight, false);
+    });
+    
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropArea.addEventListener(eventName, unhighlight, false);
+    });
+    
+    function highlight() {
+        dropArea.classList.add('dragover');
+    }
+    
+    function unhighlight() {
+        dropArea.classList.remove('dragover');
+    }
+    
+    // Handle dropped files
+    dropArea.addEventListener('drop', handleDrop, false);
+    dropArea.addEventListener('click', () => fileInput.click());
+    
+    function handleDrop(e) {
+        const dt = e.dataTransfer;
+        const droppedFiles = dt.files;
+        handleFiles(droppedFiles);
+    }
+    
+    // Handle file selection via input
+    fileInput.addEventListener('change', function() {
+        handleFiles(this.files);
+    });
+    
+    function handleFiles(selectedFiles) {
+        files = [...files, ...Array.from(selectedFiles)];
+        updateFileList();
+        updateUploadButton();
+    }
+    
+    function updateFileList() {
+        fileList.innerHTML = '';
+        
+        if (files.length === 0) {
+            filePreview.style.display = 'none';
+            return;
+        }
+        
+        filePreview.style.display = 'block';
+        
+        files.forEach((file, index) => {
+            const fileItem = document.createElement('div');
+            fileItem.className = 'file-item';
+            fileItem.dataset.index = index;
+            
+            const fileIcon = getFileIcon(file);
+            const fileSize = formatFileSize(file.size);
+            
+            fileItem.innerHTML = `
+                <div class="file-icon">
+                    <i class="bi ${fileIcon}"></i>
+                </div>
+                <div class="file-info">
+                    <div class="file-name" title="${file.name}">${file.name}</div>
+                    <div class="file-size">${fileSize}</div>
+                </div>
+                <div class="file-actions">
+                    <button type="button" class="btn btn-sm btn-outline-danger remove-file">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            `;
+            
+            fileList.appendChild(fileItem);
+        });
+        
+        // Add event listeners to remove buttons
+        document.querySelectorAll('.remove-file').forEach(button => {
+            button.addEventListener('click', function() {
+                const index = parseInt(this.closest('.file-item').dataset.index);
+                files.splice(index, 1);
+                updateFileList();
+                updateUploadButton();
+            });
+        });
+    }
+    
+    function updateUploadButton() {
+        startUploadBtn.disabled = files.length === 0;
+    }
+    
+    function getFileIcon(file) {
+        const extension = file.name.split('.').pop().toLowerCase();
+        
+        const icons = {
+            // Documents
+            'pdf': 'bi-file-earmark-pdf',
+            'doc': 'bi-file-earmark-word',
+            'docx': 'bi-file-earmark-word',
+            'txt': 'bi-file-text',
+            'rtf': 'bi-file-text',
+            'odt': 'bi-file-text',
+            'xls': 'bi-file-earmark-excel',
+            'xlsx': 'bi-file-earmark-excel',
+            'csv': 'bi-file-earmark-spreadsheet',
+            'ppt': 'bi-file-earmark-ppt',
+            'pptx': 'bi-file-earmark-ppt',
+            
+            // Images
+            'jpg': 'bi-file-image',
+            'jpeg': 'bi-file-image',
+            'png': 'bi-file-image',
+            'gif': 'bi-file-image',
+            'bmp': 'bi-file-image',
+            'svg': 'bi-file-image',
+            'webp': 'bi-file-image',
+            
+            // Audio
+            'mp3': 'bi-file-music',
+            'wav': 'bi-file-music',
+            'ogg': 'bi-file-music',
+            
+            // Video
+            'mp4': 'bi-file-play',
+            'avi': 'bi-file-play',
+            'mov': 'bi-file-play',
+            'wmv': 'bi-file-play',
+            
+            // Archives
+            'zip': 'bi-file-zip',
+            'rar': 'bi-file-zip',
+            '7z': 'bi-file-zip',
+            'tar': 'bi-file-zip',
+            'gz': 'bi-file-zip',
+            
+            // Code
+            'js': 'bi-file-code',
+            'html': 'bi-file-code',
+            'css': 'bi-file-code',
+            'py': 'bi-file-code',
+            'java': 'bi-file-code',
+            'c': 'bi-file-code',
+            'cpp': 'bi-file-code',
+            'cs': 'bi-file-code',
+            'php': 'bi-file-code',
+            'json': 'bi-file-code',
+            'xml': 'bi-file-code',
+        };
+        
+        return icons[extension] || 'bi-file-earmark';
+    }
+    
+    function formatFileSize(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+    
+    // Handle form submission
+    uploadForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        if (files.length === 0) {
+            showAlert('Please select at least one file to upload.', 'warning');
+            return;
+        }
+        
+        // Add files to upload queue
+        addToQueue(files);
+        
+        // Clear the file list
+        files = [];
+        updateFileList();
+        updateUploadButton();
+        
+        // Start processing the queue if not already in progress
+        if (!uploadInProgress) {
+            processQueue();
+        }
+    });
+    
+    // Handle cancel upload
+    cancelUploadBtn.addEventListener('click', function() {
+        if (confirm('Are you sure you want to cancel the upload?')) {
+            // Clear the file list
+            files = [];
+            updateFileList();
+            updateUploadButton();
+        }
+    });
+    
+    // Upload queue functions
+    function addToQueue(filesToAdd) {
+        filesToAdd.forEach(file => {
+            const queueItem = document.createElement('div');
+            queueItem.className = 'file-item mb-2';
+            queueItem.innerHTML = `
+                <div class="file-icon">
+                    <i class="bi ${getFileIcon(file)}"></i>
+                </div>
+                <div class="file-info">
+                    <div class="file-name" title="${file.name}">${file.name}</div>
+                    <div class="file-size">${formatFileSize(file.size)}</div>
+                    <div class="progress mt-2">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                             role="progressbar" 
+                             style="width: 0%" 
+                             aria-valuenow="0" 
+                             aria-valuemin="0" 
+                             aria-valuemax="100">
+                        </div>
+                    </div>
+                    <div class="upload-status text-muted small mt-1">Waiting to start...</div>
+                </div>
+                <div class="file-actions">
+                    <button type="button" class="btn btn-sm btn-outline-secondary cancel-upload">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+            `;
+            
+            // Add cancel event listener
+            const cancelBtn = queueItem.querySelector('.cancel-upload');
+            cancelBtn.addEventListener('click', function() {
+                // TODO: Implement cancel upload logic
+                queueItem.remove();
+                if (uploadQueue.children.length === 1) { // Only the queueEmpty element remains
+                    queueEmpty.style.display = 'block';
+                }
+            });
+            
+            uploadQueue.insertBefore(queueItem, queueEmpty);
+            queueEmpty.style.display = 'none';
+        });
+    }
+    
+    async function processQueue() {
+        const queueItems = uploadQueue.querySelectorAll('.file-item');
+        
+        if (queueItems.length === 0) {
+            uploadInProgress = false;
+            queueEmpty.style.display = 'block';
+            return;
+        }
+        
+        uploadInProgress = true;
+        
+        // Process each file in the queue
+        for (const item of queueItems) {
+            const progressBar = item.querySelector('.progress-bar');
+            const statusText = item.querySelector('.upload-status');
+            const cancelBtn = item.querySelector('.cancel-upload');
+            
+            // Skip already completed or failed items
+            if (item.classList.contains('completed') || item.classList.contains('failed')) {
+                continue;
+            }
+            
+            // Update status
+            statusText.textContent = 'Preparing...';
+            progressBar.style.width = '0%';
+            progressBar.classList.remove('bg-success', 'bg-danger');
+            
+            const file = files[parseInt(item.dataset.index)];
+            
+            try {
+                // Simulate file upload (replace with actual upload logic)
+                await uploadFile(file, (progress) => {
+                    progressBar.style.width = `${progress}%`;
+                    statusText.textContent = `Uploading... ${progress}%`;
+                });
+                
+                // Mark as completed
+                progressBar.classList.add('bg-success');
+                statusText.textContent = 'Upload complete!';
+                item.classList.add('completed');
+                
+                // Show success message
+                showAlert(`File "${file.name}" uploaded successfully!`, 'success');
+                
+            } catch (error) {
+                console.error('Upload failed:', error);
+                progressBar.classList.add('bg-danger');
+                statusText.textContent = 'Upload failed: ' + (error.message || 'Unknown error');
+                item.classList.add('failed');
+                
+                // Show error message
+                showAlert(`Failed to upload "${file.name}": ${error.message || 'Unknown error'}`, 'danger');
+            }
+            
+            // Add a small delay between files
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        
+        // Continue processing the queue
+        processQueue();
+    }
+    
+    // Simulated file upload function (replace with actual implementation)
+    function uploadFile(file, onProgress) {
+        return new Promise((resolve, reject) => {
+            // Simulate upload progress
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += Math.random() * 10;
+                if (progress >= 100) {
+                    progress = 100;
+                    clearInterval(interval);
+                    onProgress(progress);
+                    resolve();
+                } else {
+                    onProgress(progress);
+                }
+            }, 200);
+            
+            // Simulate network error 10% of the time
+            if (Math.random() < 0.1) {
+                setTimeout(() => {
+                    clearInterval(interval);
+                    reject(new Error('Network error occurred'));
+                }, Math.random() * 3000);
+            }
+        });
+    }
+    
+    // Utility function to show alerts
+    function showAlert(message, type = 'info') {
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+        alertDiv.role = 'alert';
+        alertDiv.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        
+        // Add to the top of the page
+        const container = document.querySelector('.container.my-4');
+        container.insertBefore(alertDiv, container.firstChild);
+        
+        // Auto-dismiss after 5 seconds
+        setTimeout(() => {
+            const alert = bootstrap.Alert.getOrCreateInstance(alertDiv);
+            alert.close();
+        }, 5000);
+    }
+});
+</script>
+{% endblock %}

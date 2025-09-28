@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fixed P2P Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .videos { display: flex; gap: 20px; margin: 20px 0; }
+        video { width: 300px; height: 225px; background: #000; }
+        .logs { background: #f0f0f0; padding: 10px; border-radius: 5px; height: 200px; overflow-y: auto; }
+        button { padding: 8px 15px; margin: 5px; }
+        .status { font-weight: bold; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>P2P Test (Fixed)</h1>
+    <div class="videos">
+        <div>
+            <h3>Local</h3>
+            <video id="localVideo" autoplay playsinline muted></video>
+        </div>
+        <div>
+            <h3>Remote</h3>
+            <video id="remoteVideo" autoplay playsinline></video>
+        </div>
+    </div>
+    
+    <div class="controls">
+        <button id="startButton">Start</button>
+        <button id="callButton" disabled>Call</button>
+        <button id="hangupButton" disabled>Hang Up</button>
+        <button id="toggleVideo" disabled>Start Video</button>
+    </div>
+    
+    <div class="chat">
+        <h3>Chat</h3>
+        <div id="chatLog" class="logs"></div>
+        <div style="margin-top: 10px;">
+            <input type="text" id="messageInput" placeholder="Type a message..." disabled>
+            <button id="sendButton" disabled>Send</button>
+        </div>
+    </div>
+    
+    <div class="debug">
+        <h3>Debug Logs</h3>
+        <div id="debugLog" class="logs"></div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const localVideo = document.getElementById('localVideo');
+        const remoteVideo = document.getElementById('remoteVideo');
+        const startButton = document.getElementById('startButton');
+        const callButton = document.getElementById('callButton');
+        const hangupButton = document.getElementById('hangupButton');
+        const toggleVideoButton = document.getElementById('toggleVideo');
+        const messageInput = document.getElementById('messageInput');
+        const sendButton = document.getElementById('sendButton');
+        const chatLog = document.getElementById('chatLog');
+        const debugLog = document.getElementById('debugLog');
+
+        // WebRTC Variables
+        let localStream;
+        let peerConnection;
+        let dataChannel;
+        let isCaller = false;
+        const SIGNAL_KEY = 'p2p-signal-' + Math.random().toString(36).substring(2, 9);
+
+        // Logging
+        function log(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            entry.style.color = type === 'error' ? 'red' : type === 'success' ? 'green' : 'black';
+            debugLog.appendChild(entry);
+            debugLog.scrollTop = debugLog.scrollHeight;
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+
+        function logChat(message, isSelf = false) {
+            const messageDiv = document.createElement('div');
+            messageDiv.textContent = message;
+            messageDiv.style.color = isSelf ? 'blue' : 'black';
+            messageDiv.style.textAlign = isSelf ? 'right' : 'left';
+            chatLog.appendChild(messageDiv);
+            chatLog.scrollTop = chatLog.scrollHeight;
+        }
+
+        // Start local media
+        async function start() {
+            try {
+                log('Requesting media devices...');
+                localStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: true,
+                    video: false 
+                });
+                
+                localVideo.srcObject = localStream;
+                log('Local media ready');
+                
+                // Set up signaling
+                window.addEventListener('storage', handleSignal);
+                
+                // Enable UI
+                callButton.disabled = false;
+                toggleVideoButton.disabled = false;
+                
+                log('Ready to make or receive calls', 'success');
+                
+            } catch (err) {
+                log(`Error accessing media devices: ${err.message}`, 'error');
+            }
+        }
+
+        // Toggle video
+        async function toggleVideo() {
+            if (!localStream) return;
+            
+            try {
+                if (!localStream.getVideoTracks().length) {
+                    // Enable video
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    const videoTrack = stream.getVideoTracks()[0];
+                    localStream.addTrack(videoTrack);
+                    toggleVideoButton.textContent = 'Stop Video';
+                    log('Video enabled');
+                    
+                    // Update peer connection if in a call
+                    if (peerConnection) {
+                        const senders = peerConnection.getSenders();
+                        const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+                        
+                        if (videoSender) {
+                            await videoSender.replaceTrack(videoTrack);
+                        } else {
+                            peerConnection.addTrack(videoTrack, localStream);
+                        }
+                    }
+                } else {
+                    // Disable video
+                    localStream.getVideoTracks().forEach(track => {
+                        track.stop();
+                        localStream.removeTrack(track);
+                    });
+                    toggleVideoButton.textContent = 'Start Video';
+                    log('Video disabled');
+                }
+            } catch (err) {
+                log(`Error toggling video: ${err.message}`, 'error');
+            }
+        }
+
+        // Create peer connection
+        function createPeerConnection() {
+            try {
+                log('Creating peer connection...');
+                
+                const config = {
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' }
+                    ]
+                };
+                
+                peerConnection = new RTCPeerConnection(config);
+                
+                // Add local tracks
+                localStream.getTracks().forEach(track => {
+                    peerConnection.addTrack(track, localStream);
+                    log(`Added local ${track.kind} track`);
+                });
+                
+                // Handle remote tracks
+                peerConnection.ontrack = (event) => {
+                    log(`Received remote ${event.track.kind} track`);
+                    
+                    if (!remoteVideo.srcObject) {
+                        remoteVideo.srcObject = new MediaStream();
+                    }
+                    
+                    const remoteStream = remoteVideo.srcObject;
+                    
+                    // Remove any existing track of the same type
+                    const existingTracks = remoteStream.getTracks()
+                        .filter(t => t.kind === event.track.kind);
+                        
+                    existingTracks.forEach(track => {
+                        track.stop();
+                        remoteStream.removeTrack(track);
+                    });
+                    
+                    // Add the new track
+                    remoteStream.addTrack(event.track);
+                    
+                    // Play the remote video
+                    if (event.track.kind === 'video') {
+                        remoteVideo.play().catch(err => {
+                            log(`Error playing remote video: ${err.message}`, 'error');
+                        });
+                    }
+                };
+                
+                // Set up data channel if caller
+                if (isCaller) {
+                    log('Creating data channel...');
+                    dataChannel = peerConnection.createDataChannel('chat');
+                    setupDataChannel();
+                } else {
+                    peerConnection.ondatachannel = (event) => {
+                        log('Data channel received');
+                        dataChannel = event.channel;
+                        setupDataChannel();
+                    };
+                }
+                
+                // ICE candidates
+                peerConnection.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        log('Sending ICE candidate');
+                        sendSignal({ 
+                            type: 'candidate', 
+                            candidate: event.candidate 
+                        });
+                    }
+                };
+                
+                // Connection state changes
+                peerConnection.oniceconnectionstatechange = () => {
+                    const state = peerConnection.iceConnectionState;
+                    log(`ICE connection state: ${state}`);
+                    
+                    if (state === 'disconnected' || state === 'failed') {
+                        log('Connection lost', 'error');
+                        hangUp();
+                    }
+                };
+                
+                log('Peer connection created', 'success');
+                return peerConnection;
+                
+            } catch (err) {
+                log(`Error creating peer connection: ${err.message}`, 'error');
+                throw err;
+            }
+        }
+
+        // Set up data channel
+        function setupDataChannel() {
+            if (!dataChannel) {
+                log('No data channel available', 'error');
+                return;
+            }
+            
+            dataChannel.onopen = () => {
+                log('Data channel opened', 'success');
+                messageInput.disabled = false;
+                sendButton.disabled = false;
+                logChat('Connected to peer', false);
+            };
+            
+            dataChannel.onclose = () => {
+                log('Data channel closed');
+                messageInput.disabled = true;
+                sendButton.disabled = true;
+            };
+            
+            dataChannel.onmessage = (event) => {
+                log(`Received message: ${event.data}`);
+                logChat(event.data, false);
+            };
+            
+            dataChannel.onerror = (error) => {
+                log(`Data channel error: ${error}`, 'error');
+            };
+        }
+
+        // Send signal
+        function sendSignal(signal) {
+            log(`Sending signal: ${signal.type}`);
+            localStorage.setItem(SIGNAL_KEY, JSON.stringify(signal));
+            // Clean up after sending
+            setTimeout(() => localStorage.removeItem(SIGNAL_KEY), 100);
+        }
+
+        // Handle incoming signals
+        async function handleSignal(event) {
+            if (event.key !== SIGNAL_KEY || !event.newValue) return;
+            
+            try {
+                const signal = JSON.parse(event.newValue);
+                log(`Received signal: ${signal.type}`);
+                
+                if (!peerConnection && signal.type !== 'offer') {
+                    log('No active peer connection for non-offer signal', 'error');
+                    return;
+                }
+                
+                switch (signal.type) {
+                    case 'offer':
+                        log('Received offer, creating peer connection...');
+                        isCaller = false;
+                        createPeerConnection();
+                        
+                        try {
+                            await peerConnection.setRemoteDescription(new RTCSessionDescription(signal));
+                            log('Set remote description');
+                            
+                            const answer = await peerConnection.createAnswer();
+                            await peerConnection.setLocalDescription(answer);
+                            log('Created answer');
+                            
+                            sendSignal({ 
+                                type: 'answer', 
+                                sdp: answer.sdp 
+                            });
+                            
+                            hangupButton.disabled = false;
+                            callButton.disabled = true;
+                            
+                        } catch (err) {
+                            log(`Error handling offer: ${err.message}`, 'error');
+                            hangUp();
+                        }
+                        break;
+                        
+                    case 'answer':
+                        log('Received answer');
+                        try {
+                            await peerConnection.setRemoteDescription(
+                                new RTCSessionDescription(signal)
+                            );
+                            log('Call connected!', 'success');
+                        } catch (err) {
+                            log(`Error setting remote description: ${err.message}`, 'error');
+                            hangUp();
+                        }
+                        break;
+                        
+                    case 'candidate':
+                        if (signal.candidate) {
+                            try {
+                                await peerConnection.addIceCandidate(
+                                    new RTCIceCandidate(signal.candidate)
+                                );
+                                log('Added ICE candidate');
+                            } catch (err) {
+                                if (err.name !== 'TypeError') {
+                                    log(`Error adding ICE candidate: ${err.message}`, 'error');
+                                }
+                            }
+                        }
+                        break;
+                }
+            } catch (err) {
+                log(`Error handling signal: ${err.message}`, 'error');
+            }
+        }
+
+        // Start call
+        async function call() {
+            if (peerConnection) {
+                log('Call already in progress', 'error');
+                return;
+            }
+            
+            try {
+                isCaller = true;
+                log('Initiating call...');
+                
+                createPeerConnection();
+                
+                const offer = await peerConnection.createOffer({
+                    offerToReceiveAudio: true,
+                    offerToReceiveVideo: true
+                });
+                
+                await peerConnection.setLocalDescription(offer);
+                log('Created offer');
+                
+                sendSignal({ 
+                    type: 'offer', 
+                    sdp: offer.sdp 
+                });
+                
+                callButton.disabled = true;
+                hangupButton.disabled = false;
+                
+                log('Call initiated, waiting for answer...');
+                
+            } catch (err) {
+                log(`Call error: ${err.message}`, 'error');
+                hangUp();
+            }
+        }
+
+        // Hang up
+        function hangUp() {
+            log('Ending call...');
+            
+            // Close peer connection
+            if (peerConnection) {
+                peerConnection.getTransceivers().forEach(transceiver => {
+                    if (transceiver.stop) {
+                        transceiver.stop();
+                    }
+                });
+                peerConnection.close();
+                peerConnection = null;
+            }
+            
+            // Close data channel
+            if (dataChannel) {
+                dataChannel.close();
+                dataChannel = null;
+            }
+            
+            // Reset remote video
+            if (remoteVideo.srcObject) {
+                remoteVideo.srcObject.getTracks().forEach(track => track.stop());
+                remoteVideo.srcObject = null;
+            }
+            
+            // Reset UI
+            callButton.disabled = false;
+            hangupButton.disabled = true;
+            messageInput.disabled = true;
+            sendButton.disabled = true;
+            
+            if (localStream) {
+                // Keep local video track if it exists
+                const videoTracks = localStream.getVideoTracks();
+                if (videoTracks.length > 0) {
+                    toggleVideoButton.textContent = 'Stop Video';
+                } else {
+                    toggleVideoButton.textContent = 'Start Video';
+                }
+            }
+            
+            log('Call ended');
+        }
+
+        // Send chat message
+        function sendMessage() {
+            const message = messageInput.value.trim();
+            if (!message) return;
+            
+            if (!dataChannel || dataChannel.readyState !== 'open') {
+                log('Cannot send message: Data channel not ready', 'error');
+                return;
+            }
+            
+            try {
+                dataChannel.send(message);
+                logChat(`You: ${message}`, true);
+                messageInput.value = '';
+                messageInput.focus();
+            } catch (err) {
+                log(`Error sending message: ${err.message}`, 'error');
+            }
+        }
+
+        // Event Listeners
+        startButton.addEventListener('click', start);
+        callButton.addEventListener('click', call);
+        hangupButton.addEventListener('click', hangUp);
+        toggleVideoButton.addEventListener('click', toggleVideo);
+        
+        sendButton.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+        
+        // Initialize
+        log('Page loaded. Click Start to begin.');
+    </script>
+</body>
+</html>

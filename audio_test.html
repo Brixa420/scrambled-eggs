@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebRTC Audio Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        #log { 
+            border: 1px solid #ccc; 
+            padding: 10px; 
+            height: 300px; 
+            overflow-y: auto; 
+            font-family: monospace; 
+            background: #f5f5f5; 
+            margin-bottom: 20px;
+        }
+        button { 
+            padding: 10px 15px; 
+            margin: 5px;
+            cursor: pointer;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .connected { background-color: #dff0d8; }
+        .disconnected { background-color: #f2dede; }
+        .connecting { background-color: #fcf8e3; }
+    </style>
+</head>
+<body>
+    <h1>WebRTC Audio Test</h1>
+    <div id="status" class="status disconnected">Status: Disconnected</div>
+    
+    <div>
+        <button id="startButton">Start Audio</button>
+        <button id="callButton" disabled>Start Call</button>
+        <button id="hangupButton" disabled>End Call</button>
+    </div>
+    
+    <h3>Audio Controls:</h3>
+    <div>
+        <label>Microphone: </label>
+        <span id="micStatus">Off</span>
+        <button id="toggleMic">Toggle Microphone</button>
+    </div>
+    
+    <h3>Connection Log:</h3>
+    <div id="log"></div>
+
+    <script>
+        // DOM elements
+        const startButton = document.getElementById('startButton');
+        const callButton = document.getElementById('callButton');
+        const hangupButton = document.getElementById('hangupButton');
+        const toggleMicButton = document.getElementById('toggleMic');
+        const logElement = document.getElementById('log');
+        const statusElement = document.getElementById('status');
+        const micStatusElement = document.getElementById('micStatus');
+
+        // Log function
+        function log(message, isError = false) {
+            const entry = document.createElement('div');
+            entry.textContent = new Date().toLocaleTimeString() + ' - ' + message;
+            entry.style.color = isError ? 'red' : 'inherit';
+            logElement.appendChild(entry);
+            logElement.scrollTop = logElement.scrollHeight;
+            console.log(message);
+        }
+
+        // Update status display
+        function updateStatus(connected) {
+            if (connected) {
+                statusElement.textContent = 'Status: Connected';
+                statusElement.className = 'status connected';
+            } else {
+                statusElement.textContent = 'Status: Disconnected';
+                statusElement.className = 'status disconnected';
+            }
+        }
+
+        // WebRTC configuration
+        const configuration = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        };
+
+        // Variables
+        let localStream;
+        let peerConnection;
+        let socket;
+        const roomId = 'audio_room';
+        const peerId = 'user_' + Math.random().toString(36).substr(2, 9);
+        const serverUrl = 'ws://localhost:9000/ws';
+
+        // 1. Start the audio
+        startButton.onclick = async () => {
+            try {
+                log('Requesting microphone access...');
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    audio: true,
+                    video: false // Explicitly disable video
+                });
+                
+                log('✓ Microphone access granted');
+                startButton.disabled = true;
+                callButton.disabled = false;
+                micStatusElement.textContent = 'On';
+                
+                // Connect to signaling server
+                connectToSignalingServer();
+                
+            } catch (err) {
+                log('Error accessing microphone: ' + err.message, true);
+                if (err.name === 'NotAllowedError') {
+                    log('Please allow microphone access to continue', true);
+                }
+            }
+        };
+
+        // 2. Connect to signaling server
+        function connectToSignalingServer() {
+            log('Connecting to signaling server...');
+            socket = new WebSocket(`${serverUrl}?peer_id=${peerId}&room_id=${roomId}`);
+            
+            socket.onopen = () => {
+                log('✓ Connected to signaling server');
+                log('  - Peer ID: ' + peerId);
+                log('  - Room ID: ' + roomId);
+                updateStatus(true);
+            };
+
+            socket.onclose = () => {
+                log('✗ Disconnected from signaling server', true);
+                updateStatus(false);
+                callButton.disabled = true;
+                hangupButton.disabled = true;
+            };
+
+            socket.onerror = (error) => {
+                log('WebSocket error: ' + error, true);
+            };
+
+            socket.onmessage = async (event) => {
+                try {
+                    const message = JSON.parse(event.data);
+                    log(`Received ${message.type} from ${message.sender_id || 'unknown'}`);
+                    
+                    if (message.sender_id === peerId) {
+                        log('Ignoring message from self');
+                        return;
+                    }
+
+                    switch (message.type) {
+                        case 'offer':
+                            await handleOffer(message);
+                            break;
+                        case 'answer':
+                            await handleAnswer(message);
+                            break;
+                        case 'candidate':
+                            await handleCandidate(message.candidate);
+                            break;
+                        case 'peers':
+                            log(`Peers in room: ${message.peers.length > 0 ? message.peers.join(', ') : 'None'}`);
+                            break;
+                        default:
+                            log('Unknown message type: ' + message.type);
+                    }
+                } catch (e) {
+                    log('Error handling message: ' + e.message, true);
+                    console.error(e);
+                }
+            };
+        }
+
+        // 3. Create peer connection
+        async function createPeerConnection() {
+            log('Creating peer connection...');
+            peerConnection = new RTCPeerConnection(configuration);
+            
+            // Add local audio tracks to connection
+            localStream.getAudioTracks().forEach(track => {
+                peerConnection.addTrack(track, localStream);
+            });
+
+            // Handle remote stream
+            peerConnection.ontrack = (event) => {
+                log('Received remote audio stream');
+                const audio = new Audio();
+                audio.srcObject = event.streams[0];
+                audio.play().catch(e => log('Error playing audio: ' + e.message, true));
+            };
+
+            // ICE candidate handling
+            peerConnection.onicecandidate = ({ candidate }) => {
+                if (candidate) {
+                    log('Sending ICE candidate...');
+                    socket.send(JSON.stringify({
+                        type: 'candidate',
+                        candidate: candidate,
+                        target_peer_id: 'all'
+                    }));
+                }
+            };
+
+            // Connection state changes
+            peerConnection.oniceconnectionstatechange = () => {
+                log(`ICE connection state: ${peerConnection.iceConnectionState}`);
+                
+                if (peerConnection.iceConnectionState === 'connected') {
+                    log('✓ Peer connection established');
+                    hangupButton.disabled = false;
+                } else if (peerConnection.iceConnectionState === 'disconnected' || 
+                          peerConnection.iceConnectionState === 'failed') {
+                    log('Peer connection closed', true);
+                    hangupCall();
+                }
+            };
+        }
+
+        // 4. Handle incoming offer
+        async function handleOffer(offer) {
+            if (peerConnection) {
+                log('Peer connection already exists');
+                return;
+            }
+
+            await createPeerConnection();
+            
+            log('Setting remote description...');
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+            
+            log('Creating answer...');
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            
+            log('Sending answer...');
+            socket.send(JSON.stringify({
+                type: 'answer',
+                sdp: answer.sdp,
+                target_peer_id: offer.sender_id
+            }));
+            
+            callButton.disabled = true;
+            hangupButton.disabled = false;
+        }
+
+        // 5. Handle incoming answer
+        async function handleAnswer(answer) {
+            if (!peerConnection) {
+                log('No peer connection to set remote description', true);
+                return;
+            }
+            
+            log('Setting remote description from answer...');
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+        }
+
+        // 6. Handle ICE candidate
+        async function handleCandidate(candidate) {
+            if (!peerConnection) {
+                log('No peer connection to add ICE candidate', true);
+                return;
+            }
+            
+            if (candidate) {
+                log('Adding ICE candidate...');
+                try {
+                    await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+                } catch (e) {
+                    log('Error adding ICE candidate: ' + e.message, true);
+                }
+            }
+        }
+
+        // 7. Start a call
+        callButton.onclick = async () => {
+            if (!socket || socket.readyState !== WebSocket.OPEN) {
+                log('Not connected to signaling server', true);
+                return;
+            }
+            
+            await createPeerConnection();
+            
+            try {
+                log('Creating offer...');
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+                
+                log('Sending offer...');
+                socket.send(JSON.stringify({
+                    type: 'offer',
+                    sdp: offer.sdp,
+                    target_peer_id: 'all' // Send to all peers in the room
+                }));
+                
+                callButton.disabled = true;
+                hangupButton.disabled = false;
+                
+            } catch (err) {
+                log('Error creating/sending offer: ' + err.message, true);
+                console.error(err);
+            }
+        };
+
+        // 8. Hang up the call
+        function hangupCall() {
+            if (peerConnection) {
+                log('Closing peer connection...');
+                peerConnection.close();
+                peerConnection = null;
+            }
+            
+            callButton.disabled = false;
+            hangupButton.disabled = true;
+            
+            // Notify other peers
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({
+                    type: 'hangup',
+                    target_peer_id: 'all'
+                }));
+            }
+            
+            log('Call ended');
+        }
+
+        // 9. Toggle microphone
+        toggleMicButton.onclick = () => {
+            if (!localStream) return;
+            
+            const audioTracks = localStream.getAudioTracks();
+            if (audioTracks.length > 0) {
+                const track = audioTracks[0];
+                track.enabled = !track.enabled;
+                const newState = track.enabled ? 'On' : 'Off';
+                micStatusElement.textContent = newState;
+                log(`Microphone ${newState.toLowerCase()}`);
+            }
+        };
+
+        // 10. Handle hangup button
+        hangupButton.onclick = hangupCall;
+
+        // 11. Handle page unload
+        window.onbeforeunload = () => {
+            hangupCall();
+            if (socket) {
+                socket.close();
+            }
+        };
+
+        // Initial UI state
+        updateStatus(false);
+        log('Page loaded. Click "Start Audio" to begin.');
+    </script>
+</body>
+</html>

@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row">
+        <div class="col-md-8 offset-md-2">
+            <div class="card">
+                <div class="card-header">
+                    <h2>Text Analysis</h2>
+                </div>
+                <div class="card-body">
+                    <form id="analysisForm">
+                        <div class="form-group">
+                            <label for="textInput">Enter text to analyze:</label>
+                            <textarea class="form-control" id="textInput" rows="5" required></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary mt-3">Analyze</button>
+                    </form>
+                    
+                    <div id="result" class="mt-4" style="display: none;">
+                        <h4>Analysis Results:</h4>
+                        <div class="progress mt-2">
+                            <div id="radicalMeter" class="progress-bar" role="progressbar" style="width: 0%" 
+                                 aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                        </div>
+                        <p class="mt-2">Radicalization Level: <span id="level">0</span>/4</p>
+                        <div class="alert" id="response" role="alert"></div>
+                        <div id="matchedTerms" class="mt-3">
+                            <h5>Matched Terms:</h5>
+                            <div id="termsList" class="d-flex flex-wrap"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('analysisForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const text = document.getElementById('textInput').value.trim();
+    if (!text) return;
+    
+    try {
+        const response = await fetch('/api/analysis/radicalization', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token() }}'
+            },
+            body: JSON.stringify({ text })
+        });
+        
+        if (!response.ok) {
+            throw new Error('Analysis failed');
+        }
+        
+        const data = await response.json();
+        
+        // Update the UI with results
+        const level = data.level;
+        const percentage = (level / data.max_level) * 100;
+        
+        document.getElementById('radicalMeter').style.width = `${percentage}%`;
+        document.getElementById('radicalMeter').setAttribute('aria-valuenow', level);
+        document.getElementById('level').textContent = level;
+        
+        const responseElement = document.getElementById('response');
+        responseElement.textContent = data.response;
+        responseElement.className = `alert ${getAlertClass(level)}`;
+        
+        // Update matched terms
+        const termsList = document.getElementById('termsList');
+        termsList.innerHTML = data.matched_terms.length > 0 
+            ? data.matched_terms.map(term => `<span class="badge bg-secondary me-2 mb-2">${term}</span>`).join('')
+            : '<p>No radical terms detected.</p>';
+        
+        // Show results
+        document.getElementById('result').style.display = 'block';
+        
+    } catch (error) {
+        console.error('Error:', error);
+        alert('An error occurred while analyzing the text.');
+    }
+});
+
+function getAlertClass(level) {
+    const classes = [
+        'alert-info',    // Level 0
+        'alert-primary', // Level 1
+        'alert-warning', // Level 2
+        'alert-danger',  // Level 3
+        'alert-dark'     // Level 4
+    ];
+    return classes[Math.min(level, classes.length - 1)];
+}
+</script>
+
+<style>
+.progress {
+    height: 25px;
+}
+
+.progress-bar {
+    transition: width 0.6s ease;
+}
+</style>
+{% endblock %}

@@ -1,0 +1,21 @@
+# Core Dependencies
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-asyncio>=0.21.1
+pytest-mock>=3.11.1
+
+# HSM Dependencies (minimal set)
+PyKCS11>=1.5.11
+pyscard>=2.0.7
+
+# Cloud Dependencies (optional, install as needed)
+# boto3>=1.28.0  # For AWS KMS support
+# google-cloud-kms>=2.15.1  # For GCP KMS support
+# azure-identity>=1.14.0  # For Azure Key Vault support
+# azure-keyvault-keys>=4.8.0  # For Azure Key Vault support
+
+# Linting & Formatting
+black>=23.7.0
+isort>=5.12.0
+flake8>=6.1.0
+mypy>=1.5.1

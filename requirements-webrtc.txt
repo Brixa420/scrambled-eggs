@@ -1,0 +1,12 @@
+# WebRTC Dependencies
+aiortc>=1.5.0
+websockets>=10.4
+python-dotenv>=0.19.0
+numpy>=1.21.0  # Required by aiortc
+av>=9.0.0  # Required for media support in aiortc
+
+# Additional dependencies for the chat example
+aiohttp>=3.8.0
+aiortc>=1.5.0
+websockets>=10.4
+python-dotenv>=0.19.0

@@ -1,0 +1,31 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Welcome to {{ app_name }}!{% endblock %}
+
+{% block header %}Welcome to {{ app_name }}, {{ username }}!{% endblock %}
+
+{% block content %}
+    <p>Hello {{ username }},</p>
+    
+    <p>Thank you for joining {{ app_name }}! We're excited to have you on board.</p>
+    
+    <p>With {{ app_name }}, you can:</p>
+    <ul>
+        <li>Securely share files with anyone</li>
+        <li>Set expiration dates and download limits</li>
+        <li>Track your file downloads in real-time</li>
+        <li>And much more!</li>
+    </ul>
+    
+    <p>To get started, log in to your account and upload your first file. If you have any questions or need help, don't hesitate to reach out to our support team.</p>
+    
+    <p style="text-align: center;">
+        <a href="{{ url_for('main.dashboard', _external=True) }}" class="button">Go to Dashboard</a>
+    </p>
+    
+    <p>Thanks again for joining us!</p>
+    
+    <p>Best regards,<br>The {{ app_name }} Team</p>
+    
+    <p>P.S. Follow us on social media for updates and tips!</p>
+{% endblock %}

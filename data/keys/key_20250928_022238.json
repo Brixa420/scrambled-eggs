@@ -1,0 +1,11 @@
+{
+  "id": "key_20250928_022238",
+  "created_at": "2025-09-28T02:22:38.261836",
+  "key": "tmuPAzg5FIcXSNP6Q/cTKOdN+50OWIdRxKtB3Ch+WLM=",
+  "key_hex": "b66b8f03383914871748d3fa43f71328e74dfb9d0e588751c4ab41dc287e58b3",
+  "key_length": 256,
+  "is_active": true,
+  "usage": "application_encryption",
+  "rotation_policy": "90d",
+  "version": 1
+}

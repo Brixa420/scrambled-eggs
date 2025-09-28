@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tor Control Panel - Scrambled Eggs</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <style>
+        .tor-status {
+            transition: all 0.3s ease;
+        }
+        .status-online {
+            background-color: #10B981;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+        }
+        .status-offline {
+            background-color: #EF4444;
+        }
+        .status-starting {
+            background-color: #F59E0B;
+            animation: pulse 2s infinite;
+        }
+        .status-stopping {
+            background-color: #F59E0B;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 0.7; }
+            50% { opacity: 1; }
+            100% { opacity: 0.7; }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div class="max-w-4xl mx-auto">
+            <div class="flex justify-between items-center mb-8">
+                <h1 class="text-3xl font-bold text-gray-800">Tor Control Panel</h1>
+                <a href="/" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition">
+                    <i class="fas fa-arrow-left mr-2"></i>Back to App
+                </a>
+            </div>
+
+            <!-- Tor Status Card -->
+            <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+                <h2 class="text-xl font-semibold mb-4">Tor Node Status</h2>
+                <div class="flex flex-col md:flex-row md:items-center justify-between">
+                    <div class="flex items-center mb-4 md:mb-0">
+                        <div id="tor-status-indicator" class="w-4 h-4 rounded-full mr-3 status-offline"></div>
+                        <span id="tor-status-text" class="font-medium">Checking status...</span>
+                    </div>
+                    <div class="space-x-3">
+                        <button id="start-tor" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                            <i class="fas fa-play mr-2"></i>Start Tor
+                        </button>
+                        <button id="stop-tor" class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                            <i class="fas fa-stop mr-2"></i>Stop Tor
+                        </button>
+                        <button id="restart-tor" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                            <i class="fas fa-sync-alt mr-2"></i>Restart
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Connection Details -->
+                <div id="tor-details" class="mt-6 pt-6 border-t border-gray-200 hidden">
+                    <h3 class="text-lg font-medium mb-3">Connection Details</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <p class="text-sm text-gray-500">Status</p>
+                            <p id="tor-status-detail" class="font-mono">-</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-500">Socks Port</p>
+                            <p id="tor-socks-port" class="font-mono">-</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-500">Control Port</p>
+                            <p id="tor-control-port" class="font-mono">-</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-500">Uptime</p>
+                            <p id="tor-uptime" class="font-mono">-</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tor Browser Section -->
+            <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+                <h2 class="text-xl font-semibold mb-4">Tor Browser</h2>
+                <p class="text-gray-600 mb-4">Launch the Tor Browser to browse the internet anonymously.</p>
+                <button id="open-tor-browser" class="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition">
+                    <i class="fas fa-external-link-alt mr-2"></i>Open Tor Browser
+                </button>
+                <p id="tor-browser-status" class="mt-2 text-sm text-gray-500 hidden"></p>
+            </div>
+
+            <!-- Network Settings -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-semibold mb-4">Network Settings</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Socks Port</label>
+                        <input type="number" id="socks-port" value="9050" class="w-full md:w-48 px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Control Port</label>
+                        <input type="number" id="control-port" value="9051" class="w-full md:w-48 px-3 py-2 border border-gray-300 rounded-md">
+                    </div>
+                    <div class="flex items-center">
+                        <input type="checkbox" id="use-bridges" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                        <label for="use-bridges" class="ml-2 block text-sm text-gray-700">Use Bridges</label>
+                    </div>
+                    <div id="bridge-settings" class="hidden">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Bridge Configuration</label>
+                        <textarea id="bridge-config" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="obfs4 1.2.3.4:1234 ABCDEF123456..."></textarea>
+                        <p class="mt-1 text-xs text-gray-500">Enter one bridge per line</p>
+                    </div>
+                    <button id="save-settings" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition">
+                        <i class="fas fa-save mr-2"></i>Save Settings
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const torStatusIndicator = document.getElementById('tor-status-indicator');
+        const torStatusText = document.getElementById('tor-status-text');
+        const torStatusDetail = document.getElementById('tor-status-detail');
+        const torSocksPort = document.getElementById('tor-socks-port');
+        const torControlPort = document.getElementById('tor-control-port');
+        const torUptime = document.getElementById('tor-uptime');
+        const torDetails = document.getElementById('tor-details');
+        
+        const startTorBtn = document.getElementById('start-tor');
+        const stopTorBtn = document.getElementById('stop-tor');
+        const restartTorBtn = document.getElementById('restart-tor');
+        const openTorBrowserBtn = document.getElementById('open-tor-browser');
+        const torBrowserStatus = document.getElementById('tor-browser-status');
+        
+        const useBridgesCheckbox = document.getElementById('use-bridges');
+        const bridgeSettings = document.getElementById('bridge-settings');
+        const saveSettingsBtn = document.getElementById('save-settings');
+
+        // Toggle bridge settings
+        useBridgesCheckbox.addEventListener('change', () => {
+            bridgeSettings.classList.toggle('hidden', !useBridgesCheckbox.checked);
+        });
+
+        // Save settings
+        saveSettingsBtn.addEventListener('click', async () => {
+            try {
+                const response = await fetch('/tor/settings', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        socksPort: document.getElementById('socks-port').value,
+                        controlPort: document.getElementById('control-port').value,
+                        useBridges: useBridgesCheckbox.checked,
+                        bridgeConfig: document.getElementById('bridge-config').value
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.status === 'success') {
+                    alert('Settings saved successfully. Restart Tor to apply changes.');
+                } else {
+                    alert('Failed to save settings: ' + (data.message || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error saving settings:', error);
+                alert('Failed to save settings. Check console for details.');
+            }
+        });
+
+        // Update Tor status
+        async function updateTorStatus() {
+            try {
+                const response = await fetch('/tor/status');
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    const status = data.tor_status;
+                    const isRunning = status === 'running';
+                    const isStarting = status === 'starting';
+                    const isStopping = status === 'stopping';
+                    
+                    // Update status indicator
+                    torStatusIndicator.className = 'w-4 h-4 rounded-full mr-3 ' + 
+                        (isRunning ? 'status-online' : isStarting || isStopping ? 'status-starting' : 'status-offline');
+                    
+                    // Update status text
+                    torStatusText.textContent = isRunning ? 'Tor is running' : 
+                                             isStarting ? 'Tor is starting...' :
+                                             isStopping ? 'Tor is stopping...' : 'Tor is not running';
+                    
+                    // Update button states
+                    startTorBtn.disabled = isRunning || isStarting;
+                    stopTorBtn.disabled = !isRunning || isStopping;
+                    restartTorBtn.disabled = !isRunning || isStarting || isStopping;
+                    
+                    // Show details if Tor is running
+                    if (isRunning) {
+                        torDetails.classList.remove('hidden');
+                        torStatusDetail.textContent = 'Connected';
+                        torSocksPort.textContent = data.socks_port || '9050';
+                        torControlPort.textContent = data.control_port || '9051';
+                        // Update uptime if available
+                        if (data.uptime) {
+                            const hours = Math.floor(data.uptime / 3600);
+                            const minutes = Math.floor((data.uptime % 3600) / 60);
+                            const seconds = data.uptime % 60;
+                            torUptime.textContent = `${hours}h ${minutes}m ${seconds}s`;
+                        }
+                    } else {
+                        torDetails.classList.add('hidden');
+                    }
+                } else {
+                    console.error('Failed to get Tor status:', data.message);
+                }
+            } catch (error) {
+                console.error('Error checking Tor status:', error);
+                torStatusText.textContent = 'Error checking status';
+                torStatusIndicator.className = 'w-4 h-4 rounded-full mr-3 status-offline';
+            }
+        }
+
+        // Start Tor
+        startTorBtn.addEventListener('click', async () => {
+            try {
+                startTorBtn.disabled = true;
+                startTorBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Starting...';
+                
+                const response = await fetch('/tor/start', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    // Poll for status updates
+                    const checkStatus = setInterval(async () => {
+                        await updateTorStatus();
+                        if (torStatusText.textContent === 'Tor is running') {
+                            clearInterval(checkStatus);
+                            startTorBtn.innerHTML = '<i class="fas fa-play mr-2"></i>Start Tor';
+                        }
+                    }, 1000);
+                } else {
+                    alert('Failed to start Tor: ' + (data.message || 'Unknown error'));
+                    startTorBtn.disabled = false;
+                    startTorBtn.innerHTML = '<i class="fas fa-play mr-2"></i>Start Tor';
+                }
+            } catch (error) {
+                console.error('Error starting Tor:', error);
+                alert('Failed to start Tor. Check console for details.');
+                startTorBtn.disabled = false;
+                startTorBtn.innerHTML = '<i class="fas fa-play mr-2"></i>Start Tor';
+            }
+        });
+
+        // Stop Tor
+        stopTorBtn.addEventListener('click', async () => {
+            if (!confirm('Are you sure you want to stop Tor? This will terminate all active connections.')) {
+                return;
+            }
+            
+            try {
+                stopTorBtn.disabled = true;
+                stopTorBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Stopping...';
+                
+                const response = await fetch('/tor/stop', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    // Poll for status updates
+                    const checkStatus = setInterval(async () => {
+                        await updateTorStatus();
+                        if (torStatusText.textContent === 'Tor is not running') {
+                            clearInterval(checkStatus);
+                            stopTorBtn.innerHTML = '<i class="fas fa-stop mr-2"></i>Stop Tor';
+                        }
+                    }, 1000);
+                } else {
+                    alert('Failed to stop Tor: ' + (data.message || 'Unknown error'));
+                    stopTorBtn.disabled = false;
+                    stopTorBtn.innerHTML = '<i class="fas fa-stop mr-2"></i>Stop Tor';
+                }
+            } catch (error) {
+                console.error('Error stopping Tor:', error);
+                alert('Failed to stop Tor. Check console for details.');
+                stopTorBtn.disabled = false;
+                stopTorBtn.innerHTML = '<i class="fas fa-stop mr-2"></i>Stop Tor';
+            }
+        });
+
+        // Restart Tor
+        restartTorBtn.addEventListener('click', async () => {
+            if (!confirm('Are you sure you want to restart Tor? This will temporarily interrupt connections.')) {
+                return;
+            }
+            
+            try {
+                restartTorBtn.disabled = true;
+                restartTorBtn.innerHTML = '<i class="fas fa-sync-alt fa-spin mr-2"></i>Restarting...';
+                
+                // First stop Tor
+                const stopResponse = await fetch('/tor/stop', { method: 'POST' });
+                const stopData = await stopResponse.json();
+                
+                if (stopData.status === 'success') {
+                    // Wait a bit before starting again
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    
+                    // Then start Tor again
+                    const startResponse = await fetch('/tor/start', { method: 'POST' });
+                    const startData = await startResponse.json();
+                    
+                    if (startData.status === 'success') {
+                        // Poll for status updates
+                        const checkStatus = setInterval(async () => {
+                            await updateTorStatus();
+                            if (torStatusText.textContent === 'Tor is running') {
+                                clearInterval(checkStatus);
+                                restartTorBtn.disabled = false;
+                                restartTorBtn.innerHTML = '<i class="fas fa-sync-alt mr-2"></i>Restart';
+                            }
+                        }, 1000);
+                    } else {
+                        throw new Error(startData.message || 'Failed to start Tor');
+                    }
+                } else {
+                    throw new Error(stopData.message || 'Failed to stop Tor');
+                }
+            } catch (error) {
+                console.error('Error restarting Tor:', error);
+                alert('Failed to restart Tor. Check console for details.');
+                restartTorBtn.disabled = false;
+                restartTorBtn.innerHTML = '<i class="fas fa-sync-alt mr-2"></i>Restart';
+                updateTorStatus();
+            }
+        });
+
+        // Open Tor Browser
+        openTorBrowserBtn.addEventListener('click', async () => {
+            try {
+                openTorBrowserBtn.disabled = true;
+                torBrowserStatus.textContent = 'Launching Tor Browser...';
+                torBrowserStatus.classList.remove('hidden', 'text-red-500');
+                torBrowserStatus.classList.add('text-gray-500');
+                
+                const response = await fetch('/tor/open-browser', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    torBrowserStatus.textContent = 'Tor Browser launched successfully';
+                    torBrowserStatus.classList.add('text-green-500');
+                } else {
+                    throw new Error(data.message || 'Failed to launch Tor Browser');
+                }
+            } catch (error) {
+                console.error('Error opening Tor Browser:', error);
+                torBrowserStatus.textContent = 'Error: ' + (error.message || 'Failed to launch Tor Browser');
+                torBrowserStatus.classList.add('text-red-500');
+            } finally {
+                openTorBrowserBtn.disabled = false;
+                
+                // Clear status after 5 seconds
+                setTimeout(() => {
+                    torBrowserStatus.classList.add('hidden');
+                }, 5000);
+            }
+        });
+
+        // Initial status update
+        updateTorStatus();
+        
+        // Update status every 10 seconds
+        setInterval(updateTorStatus, 10000);
+    </script>
+</body>
+</html>

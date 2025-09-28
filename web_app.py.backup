@@ -1,0 +1,1756 @@
+"""
+Scrambled Eggs Web Interface with Real Encryption
+"""
+import os
+import sys
+import logging
+import base64
+import traceback
+import asyncio
+from datetime import datetime
+from pathlib import Path
+from typing import Optional, Dict, Any, Tuple, Union, List
+from flask import (
+    Flask, request, jsonify, render_template_string, 
+    redirect, url_for, session, flash, render_template, 
+    send_from_directory, current_app
+)
+from flask_socketio import SocketIO, emit, join_room, leave_room
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Add the project root to the Python path
+sys.path.append(str(Path(__file__).parent.absolute()))
+
+# Import Tor components
+from scrambled_eggs.tor.tor_manager import TorManager, TorState
+from scrambled_eggs.p2p.tor_integration import TorP2PIntegration
+from scrambled_eggs.tor_network import TorSession, tor_request, check_tor_connection
+from threading import Lock
+
+# Create Tor manager instance
+tor_manager = None
+tor_integration = None
+tor_lock = Lock()
+
+def init_tor():
+    global tor_manager, tor_integration, tor_session
+    try:
+        # Initialize Tor if enabled
+        if os.environ.get('ENABLE_TOR', 'False').lower() == 'true':
+            logger.info("Initializing Tor...")
+            try:
+                with tor_lock:
+                    if tor_manager is None:
+                        tor_manager = TorManager(
+                            control_port=9051,
+                            socks_port=9050,
+                            use_system_tor=True
+                        )
+                        tor_integration = TorP2PIntegration()
+                        
+                        # Start Tor if not already running
+                        if tor_manager.get_status() != TorState.RUNNING:
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                            loop.run_until_complete(tor_manager.start())
+                        
+                        # Configure Tor session
+                        tor_session = TorSession(
+                            tor_socks_port=9050
+                        )
+                        
+                        # Verify Tor connection
+                        if check_tor_connection(tor_session):
+                            logger.info("Tor proxy initialized successfully")
+                            return
+                
+                logger.warning("Tor initialization was skipped or failed")
+            except Exception as e:
+                logger.error(f"Failed to initialize Tor: {str(e)}")
+                logger.warning("Tor functionality will be disabled")
+        else:
+            logger.info("Tor is disabled. To enable, set ENABLE_TOR=true in your environment variables.")
+    except Exception as e:
+        logger.error(f"Error in Tor initialization: {str(e)}")
+        logger.warning("Continuing without Tor...")
+
+# Initialize Tor when module loads
+init_tor()
+
+# Configure requests to use Tor for all HTTP/HTTPS requests
+def setup_tor_proxy():
+    """Configure the default session to use Tor."""
+    try:
+        # Patch socket to use Tor for all network connections
+        import socket
+        import socks
+        
+        # Set default socket to use Tor SOCKS proxy
+        socks.set_default_proxy(
+            socks.SOCKS5, 
+            "127.0.0.1", 
+            9050  # Default Tor SOCKS port
+        )
+        socket.socket = socks.socksocket
+        
+        # Configure DNS resolution through Tor
+        def getaddrinfo(*args):
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', (args[0], args[1]))]
+        
+        # Monkey patch socket.getaddrinfo to prevent DNS leaks
+        socket.getaddrinfo = getaddrinfo
+        
+        logger.info("Configured network to use Tor proxy")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to configure Tor proxy: {e}")
+        return False
+
+# Apply Tor proxy settings
+setup_tor_proxy()
+
+# Import security components
+from security import (
+    init_app as init_security,
+    auth_manager,
+    login_required,
+    rate_limit,
+    audit_logger,
+    security_utils,
+    password_utils,
+    file_utils,
+    mfa
+)
+
+# Import Clippy AI
+from clippy_ai import get_clippy
+
+# Initialize Flask app
+app = Flask(__name__)
+
+# Initialize Clippy AI
+clippy = None
+try:
+    clippy = get_clippy()
+    logger.info("Clippy AI initialized successfully")
+except Exception as e:
+    logger.error(f"Failed to initialize Clippy AI: {e}")
+    clippy = None
+
+# Configure the application
+app.config.update(
+    # Session configuration
+    SESSION_COOKIE_SECURE=True,  # Only send cookie over HTTPS
+    SESSION_COOKIE_HTTPONLY=True,  # Prevent client-side JavaScript access
+    SESSION_COOKIE_SAMESITE='Lax',  # CSRF protection
+    
+    # CSRF protection
+    WTF_CSRF_ENABLED=True,
+    WTF_CSRF_TIME_LIMIT=3600,  # 1 hour
+    
+    # File uploads
+    MAX_CONTENT_LENGTH=16 * 1024 * 1024,  # 16MB max upload size
+    UPLOAD_FOLDER=str(Path(__file__).parent / 'uploads'),
+    ALLOWED_EXTENSIONS={'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif'},
+    
+    # Security headers (will be set by security middleware)
+    SECURITY_HEADERS={
+        'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'SAMEORIGIN',
+        'X-XSS-Protection': '1; mode=block',
+        'Referrer-Policy': 'strict-origin-when-cross-origin',
+        'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' cdnjs.cloudflare.com; "
+                                "style-src 'self' 'unsafe-inline' cdnjs.cloudflare.com; "
+                                "img-src 'self' data:; font-src 'self' cdnjs.cloudflare.com; "
+                                "connect-src 'self';",
+        'Permissions-Policy': "geolocation=(), microphone=(), camera=()",
+        'Cross-Origin-Opener-Policy': 'same-origin',
+        'Cross-Origin-Resource-Policy': 'same-origin',
+        'Cross-Origin-Embedder-Policy': 'require-corp',
+    },
+    
+    # Rate limiting
+    RATELIMIT_DEFAULT='200 per day;50 per hour',
+    RATELIMIT_STRATEGY='fixed-window',
+    
+    # Logging
+    LOG_LEVEL='INFO',
+    LOG_FORMAT='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    
+    # MFA
+    MFA_ISSUER='Scrambled Eggs',
+    
+    # Password policy
+    PASSWORD_MIN_LENGTH=12,
+    PASSWORD_REQUIRE_UPPERCASE=True,
+    PASSWORD_REQUIRE_LOWERCASE=True,
+    PASSWORD_REQUIRE_NUMBERS=True,
+    PASSWORD_REQUIRE_SPECIAL=True,
+    
+    # Account lockout
+    MAX_LOGIN_ATTEMPTS=5,
+    LOCKOUT_TIME=15,  # minutes
+)
+
+# Initialize security components
+init_security(app)
+
+# Set up logging
+logging.basicConfig(
+    level=app.config['LOG_LEVEL'],
+    format=app.config['LOG_FORMAT'],
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('web_interface.log')
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# Apply our patches before importing ScrambledEggs
+print("Applying patches...")
+try:
+    # Import our patched core first to replace the original
+    import patched_core  # This will apply the patches
+    print("Successfully applied core patches")
+    
+    # Also apply monkey patches for other components
+    try:
+        from monkey_patch import apply_all_patches
+        if apply_all_patches():
+            print("Successfully applied all monkey patches")
+        else:
+            print("Some monkey patches failed to apply")
+    except Exception as e:
+        print(f"Error applying monkey patches: {e}")
+        traceback.print_exc()
+        
+except Exception as e:
+    print(f"Error applying patches: {e}")
+    traceback.print_exc()
+
+import hashlib
+import hmac
+import os
+import struct
+from typing import Tuple, Optional, List, Union
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.backends import default_backend
+import base64
+
+class GateLayer:
+    """Represents a single layer in the encryption gate system."""
+    
+    def __init__(self, key: bytes, salt: bytes, gate_type: str = 'aes'):
+        """Initialize a gate layer with key, salt and type."""
+        self.key = key
+        self.salt = salt
+        self.gate_type = gate_type
+        self.iv = os.urandom(16)  # Random IV for each layer
+        
+        # Derive a key specific to this layer
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=self.salt,
+            iterations=100000,
+            backend=default_backend()
+        )
+        self.derived_key = kdf.derive(self.key)
+    
+    def process(self, data: bytes, encrypt: bool = True) -> bytes:
+        """Process data through this gate layer (encrypt or decrypt)."""
+        if self.gate_type == 'aes':
+            return self._process_aes(data, encrypt)
+        elif self.gate_type == 'chacha20':
+            return self._process_chacha20(data, encrypt)
+        else:
+            raise ValueError(f"Unsupported gate type: {self.gate_type}")
+    
+    def _process_aes(self, data: bytes, encrypt: bool) -> bytes:
+        """Process data using AES-256-CBC."""
+        cipher = Cipher(
+            algorithms.AES(self.derived_key),
+            modes.CBC(self.iv),
+            backend=default_backend()
+        )
+        
+        if encrypt:
+            # Add PKCS7 padding before encryption
+            padder = padding.PKCS7(128).padder()
+            padded_data = padder.update(data) + padder.finalize()
+            encryptor = cipher.encryptor()
+            return encryptor.update(padded_data) + encryptor.finalize()
+        else:
+            # Decrypt then remove padding
+            decryptor = cipher.decryptor()
+            padded_data = decryptor.update(data) + decryptor.finalize()
+            unpadder = padding.PKCS7(128).unpadder()
+            return unpadder.update(padded_data) + unpadder.finalize()
+    
+    def _process_chacha20(self, data: bytes, encrypt: bool) -> bytes:
+        """Process data using ChaCha20."""
+        # For ChaCha20, encryption and decryption are the same operation
+        algorithm = algorithms.ChaCha20(key=self.derived_key[:32], nonce=self.iv[:12])
+        cipher = Cipher(algorithm, mode=None, backend=default_backend())
+        encryptor = cipher.encryptor()
+        return encryptor.update(data)
+
+
+class EncryptionManager:
+    """Manages the encryption engine with layered gate encryption system."""
+    
+    def __init__(self):
+        self.engine = None
+        self.last_error = None
+        self.debug_info = {}
+        self.gate_layers: List[GateLayer] = []
+        self._apply_patches()
+        
+    def _apply_patches(self):
+        """Apply any necessary patches to the encryption libraries."""
+        try:
+            # Ensure patches are applied
+            from patches import apply_patches
+            if not apply_patches():
+                logger.warning("Some patches failed to apply")
+        except Exception as e:
+            logger.error(f"Error applying patches: {e}", exc_info=True)
+        
+    def _log_debug_info(self, key, value):
+        """Helper method to log debug information."""
+        self.debug_info[key] = value
+        logger.debug(f"{key}: {value}")
+        
+    def test_encryption(self) -> Tuple[bool, str]:
+        """Test if the layered gate encryption/decryption works correctly."""
+        if not self.gate_layers:
+            return False, "Encryption layers not initialized"
+            
+        try:
+            import time
+            test_messages = [
+                "TEST_MESSAGE_123",
+                "Another test message with special characters: !@#$%^&*()_+{}|\\:<\\>?~`-=';,.\\/\\[\\]",
+                "",  # Empty string
+                "A" * 1000,  # Long string
+                "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f"  # Binary data
+            ]
+            
+            for i, test_message in enumerate(test_messages, 1):
+                # Test string input
+                encrypted = self.encrypt_message(test_message)
+                if not encrypted:
+                    return False, f"Encryption failed for test message {i}"
+                    
+                decrypted = self.decrypt_message(encrypted)
+                if decrypted != test_message:
+                    return False, f"Decrypted message {i} doesn't match original"
+                
+                # Test bytes input
+                test_bytes = test_message.encode('utf-8')
+                encrypted = self.encrypt_message(test_bytes.decode('latin-1'))  # Force bytes through string
+                if not encrypted:
+                    return False, f"Bytes encryption failed for test message {i}"
+                    
+                decrypted = self.decrypt_message(encrypted)
+                if decrypted != test_message:
+                    return False, f"Bytes decrypted message {i} doesn't match original"
+            
+            # Test with tampered data (should fail)
+            test_message = "This should fail if tampered with"
+            encrypted = self.encrypt_message(test_message)
+            if not encrypted:
+                return False, "Encryption failed for tamper test"
+                
+            # Tamper with the encrypted data
+            tampered = bytearray(base64.b64decode(encrypted))
+            if len(tampered) > 10:  # Only tamper if we have enough data
+                tampered[5] ^= 0xFF  # Flip some bits
+                
+            try:
+                tampered_encrypted = base64.b64encode(tampered).decode('utf-8')
+                result = self.decrypt_message(tampered_encrypted)
+                if result is not None:
+                    return False, "Tampered data was not detected"
+            except Exception:
+                # Expected to fail
+                pass
+                
+            return True, "All encryption/decryption tests passed"
+            
+        except Exception as e:
+            return False, f"Test failed: {str(e)}"
+    
+    def _derive_key(self, password: str, salt: bytes, iterations: int = 100000) -> bytes:
+        """Derive a secure key from a password and salt."""
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA512(),
+            length=64,  # 512-bit key
+            salt=salt,
+            iterations=iterations,
+            backend=default_backend()
+        )
+        return kdf.derive(password.encode('utf-8'))
+    
+    def _create_gate_layers(self, password: str, num_layers: int = 3) -> None:
+        """Create multiple encryption gate layers."""
+        self.gate_layers = []
+        
+        # Generate a master key from the password
+        master_salt = os.urandom(32)
+        master_key = self._derive_key(password, master_salt)
+        
+        # Create each layer with its own derived key
+        for i in range(num_layers):
+            # Generate a unique salt for this layer
+            layer_salt = hashlib.sha256(f"layer_{i}_{password}".encode() + os.urandom(16)).digest()
+            
+            # Derive a unique key for this layer
+            layer_key = self._derive_key(
+                password + str(i) + base64.b64encode(layer_salt).decode(),
+                layer_salt
+            )
+            
+            # Alternate between AES and ChaCha20 for each layer
+            gate_type = 'aes' if i % 2 == 0 else 'chacha20'
+            
+            # Create and store the gate layer
+            self.gate_layers.append(GateLayer(layer_key, layer_salt, gate_type))
+    
+    def initialize_engine(self, password: str) -> bool:
+        """Initialize the layered gate encryption system with the given password."""
+        self.debug_info = {}  # Reset debug info
+        
+        try:
+            # Log Python version and path info
+            import sys, os
+            self._log_debug_info("Python Version", sys.version)
+            self._log_debug_info("Python Path", sys.path)
+            
+            # Initialize the gate layers
+            self._create_gate_layers(password, num_layers=5)  # Use 5 layers for strong security
+            
+            # For backward compatibility, still initialize the ScrambledEggs engine
+            try:
+                from scrambled_eggs.core import ScrambledEggs
+                self.engine = ScrambledEggs(password=password, initial_layers=1)
+                self._log_debug_info("Legacy Engine", "Initialized ScrambledEggs for backward compatibility")
+            except ImportError:
+                self.engine = None
+                self._log_debug_info("Legacy Engine", "ScrambledEggs not available, using gate encryption only")
+            
+            # Test the encryption
+            test_result, test_message = self.test_encryption()
+            if not test_result:
+                raise Exception(f"Encryption test failed: {test_message}")
+                
+            logger.info("Layered gate encryption system initialized successfully")
+            self.last_error = None
+            return True
+            
+        except Exception as e:
+            self.last_error = f"Encryption initialization error: {str(e)}"
+            logger.error(self.last_error, exc_info=True)
+            return False
+    
+    def is_initialized(self) -> bool:
+        """Check if the encryption engine is initialized."""
+        return self.engine is not None
+    
+    def _process_through_gates(self, data: bytes, encrypt: bool = True) -> bytes:
+        """Process data through all gate layers (encrypt or decrypt)."""
+        if not self.gate_layers:
+            raise ValueError("No gate layers initialized")
+            
+        # Process through each layer
+        layers = self.gate_layers if encrypt else reversed(self.gate_layers)
+        
+        result = data
+        for i, layer in enumerate(layers):
+            try:
+                result = layer.process(result, encrypt)
+                self._log_debug_info(f"Gate {i+1} ({'encrypt' if encrypt else 'decrypt'})", 
+                                   f"Layer type: {layer.gate_type}, Data length: {len(result)}")
+            except Exception as e:
+                raise Exception(f"Error in gate layer {i+1} ({layer.gate_type}): {str(e)}")
+                
+        return result
+    
+    def encrypt_message(self, message: str) -> Optional[str]:
+        """Encrypt a message using the layered gate encryption system."""
+        if not self.gate_layers:
+            self.last_error = "Encryption layers not initialized"
+            return None
+            
+        try:
+            # Convert message to bytes if it's a string
+            if isinstance(message, str):
+                message = message.encode('utf-8')
+            
+            # Add a random nonce and timestamp
+            nonce = os.urandom(8)
+            timestamp = struct.pack('>d', time.time())
+            data_to_encrypt = nonce + timestamp + message
+            
+            # Add HMAC for integrity verification
+            hmac_key = hashlib.sha256(b''.join(layer.key for layer in self.gate_layers)).digest()
+            hmac_digest = hmac.new(hmac_key, data_to_encrypt, 'sha256').digest()
+            data_with_hmac = hmac_digest + data_to_encrypt
+            
+            # Encrypt through all gate layers
+            encrypted = self._process_through_gates(data_with_hmac, encrypt=True)
+            
+            # Return base64-encoded string for safe transport
+            return base64.b64encode(encrypted).decode('utf-8')
+            
+        except Exception as e:
+            self.last_error = f"Encryption failed: {str(e)}"
+            logger.error(self.last_error, exc_info=True)
+            return None
+    
+    def decrypt_message(self, encrypted_data: str) -> Optional[str]:
+        """Decrypt a message using the layered gate encryption system."""
+        if not self.gate_layers:
+            self.last_error = "Encryption layers not initialized"
+            return None
+            
+        try:
+            # Decode base64
+            encrypted_bytes = base64.b64decode(encrypted_data)
+            
+            # Decrypt through all gate layers (in reverse order)
+            decrypted = self._process_through_gates(encrypted_bytes, encrypt=False)
+            
+            # Verify HMAC
+            hmac_key = hashlib.sha256(b''.join(layer.key for layer in self.gate_layers)).digest()
+            received_hmac = decrypted[:32]  # First 32 bytes is the HMAC
+            data = decrypted[32:]  # Rest is the actual data
+            
+            # Calculate expected HMAC
+            expected_hmac = hmac.new(hmac_key, data, 'sha256').digest()
+            
+            # Constant-time comparison to prevent timing attacks
+            if not hmac.compare_digest(received_hmac, expected_hmac):
+                raise ValueError("HMAC verification failed - message may have been tampered with")
+            
+            # Extract nonce, timestamp, and message
+            nonce = data[:8]
+            timestamp = struct.unpack('>d', data[8:16])[0]
+            message = data[16:]
+            
+            # Optional: Verify timestamp is not too old (e.g., within 5 minutes)
+            current_time = time.time()
+            if abs(current_time - timestamp) > 300:  # 5 minutes
+                logger.warning(f"Message timestamp is too old: {timestamp} (current: {current_time})")
+            
+            # Convert to string if the result is bytes
+            if isinstance(message, bytes):
+                return message.decode('utf-8')
+            return message
+            
+        except Exception as e:
+            self.last_error = f"Decryption failed: {str(e)}"
+            logger.error(self.last_error, exc_info=True)
+            return None
+            
+    def get_radicalization_level(self, text: str) -> int:
+        """
+        Calculate the radicalization level of the given text (0-4).
+        Higher levels indicate more radical anarchist content.
+        """
+        # Comprehensive list of radical terms and phrases with varying weights
+        radical_terms = {
+            # High-impact revolutionary terms (weight: 3)
+            'revolution': 3, 'overthrow': 3, 'insurrection': 3, 'uprising': 3, 'rebellion': 3,
+            'smash the state': 3, 'eat the rich': 3, 'class war': 3, 'general strike': 3,
+            'direct action': 3, 'mutual aid': 3, 'dual power': 3, 'autonomous zone': 3,
+            'black bloc': 3, 'ACAB': 3, '1312': 3, 'no gods no masters': 3, 'property is theft': 3,
+            'debt strike': 3, 'rent strike': 3, 'squat the planet': 3, 'fuck the police': 3,
+            'abolish prisons': 3, 'abolish borders': 3, 'abolish money': 3, 'abolish work': 3,
+            
+            # Medium-impact terms (weight: 2)
+            'anarchy': 2, 'anarchist': 2, 'anarchism': 2, 'direct democracy': 2,
+            'horizontalism': 2, 'prefigurative': 2, 'consensus': 2, 'affinity group': 2,
+            'solidarity': 2, 'sabotage': 2, 'occupation': 2, 'protest': 2, 
+            'resistance': 2, 'dissent': 2, 'civil disobedience': 2, 'anti-fascist': 2, 
+            'anti-capitalist': 2, 'anti-authoritarian': 2, 'anti-state': 2, 'anti-work': 2, 
+            'anti-colonial': 2, 'decolonize': 2, 'redistribute': 2, 'expropriate': 2, 
+            'communal': 2, 'collective': 2, 'syndicalism': 2, 'unionize': 2, 
+            'wildcat strike': 2, 'workplace democracy': 2, 'police abolition': 2, 
+            'prison abolition': 2, 'border abolition': 2, 'land back': 2, 
+            'decommodify': 2, 'degrowth': 2, 'climate justice': 2,
+            
+            # Lower-impact terms (weight: 1)
+            'capitalism': 1, 'socialism': 1, 'communism': 1, 'anarcho-communism': 1,
+            'anarcho-syndicalism': 1, 'libertarian socialist': 1, 'leftist': 1,
+            'proletariat': 1, 'bourgeoisie': 1, 'means of production': 1, 'class consciousness': 1,
+            'alienation': 1, 'exploitation': 1, 'oppression': 1, 'hierarchy': 1,
+            'authority': 1, 'state': 1, 'government': 1, 'police': 1, 'military': 1,
+            'prison': 1, 'border': 1, 'cop': 1, 'pig': 1, 'fascist': 1, 'nazi': 1,
+            'boss': 1, 'landlord': 1, 'capitalist': 1, 'CEO': 1, 'billionaire': 1,
+            'wage slavery': 1, 'rent is theft': 1, 'housing is a right': 1,
+            'healthcare is a right': 1, 'education is a right': 1, 'food is a right': 1,
+            'water is a right': 1, 'no borders': 1, 'no nations': 1, 'no masters': 1,
+            'no gods': 1, 'no war but class war': 1, 'solidarity forever': 1,
+            'the people united will never be defeated': 1,
+            'another world is possible': 1, 'this is what democracy looks like': 1
+        }
+        
+        # Calculate score based on term matches
+        score = 0
+        text_lower = text.lower()
+        for term, weight in radical_terms.items():
+            if term in text_lower:
+                score += weight
+        
+        # Cap the score at 100 for the 0-4 scale
+        capped_score = min(score, 100)
+        
+        # Convert to 0-4 scale with more granularity
+        # 0-20: Level 0, 21-40: Level 1, 41-60: Level 2, 61-80: Level 3, 81-100: Level 4
+        if capped_score <= 20:
+            return 0
+        elif capped_score <= 40:
+            return 1
+        elif capped_score <= 60:
+            return 2
+        elif capped_score <= 80:
+            return 3
+        else:
+            return 4
+
+# Create a global encryption manager
+encryption_manager = EncryptionManager()
+
+# Initialize SocketIO
+socketio = SocketIO(async_mode='eventlet', cors_allowed_origins="*")
+
+# Store active users
+active_users = {}
+
+# Import chat routes
+try:
+    from app.routes.chat_routes import init_chat_routes
+except ImportError as e:
+    logger.error(f"Failed to import chat routes: {e}")
+    logger.error("Chat functionality will be disabled.")
+
+# HTML Template
+HTML_TEMPLATE = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Scrambled Eggs - Secure Encryption Web Interface</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            background-color: #f9f9f9;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .success {
+            background-color: #dff0d8;
+            color: #3c763d;
+        }
+        .error {
+            background-color: #f2dede;
+            color: #a94442;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-left">
+                <h1>Scrambled Eggs</h1>
+                {% if location %}
+                <div class="location-indicator">
+                    <span class="location-flag">{{ location.flag }}</span>
+                    <span class="location-name">{{ location.name }} {{ location.description }}</span>
+                    <span class="location-coords">{{ location.coordinates }}</span>
+                </div>
+                {% endif %}
+            </div>
+            <div class="nav">
+                <a href="/" class="nav-link">Home</a>
+                <a href="/tor" class="nav-link">Tor Control</a>
+            </div>
+        </div>
+        
+        <div id="status" class="status" style="display: none;"></div>
+        
+        {% if not session.get('authenticated') %}
+        <!-- Login Form -->
+        <div class="form-group">
+            <h2>Login</h2>
+            <form id="loginForm" action="/login" method="post">
+                <label for="password">Enter your password:</label>
+                <input type="password" id="password" name="password" required>
+                <br>
+                <button type="submit">Unlock</button>
+            </form>
+        </div>
+        {% else %}
+        <!-- Encryption/Decryption Interface -->
+        <div class="form-group">
+            <h2>Encrypt Message</h2>
+            <form id="encryptForm" action="/api/encrypt" method="post">
+                <label for="message">Message:</label>
+                <input type="text" id="message" name="message" required>
+                <br>
+                <button type="submit">Encrypt</button>
+            </form>
+            <div id="encryptedResult" style="margin-top: 10px; word-break: break-all;"></div>
+        </div>
+        
+        <hr>
+        
+        <div class="form-group">
+            <h2>Decrypt Message</h2>
+            <form id="decryptForm" action="/api/decrypt" method="post">
+                <label for="encrypted">Encrypted Message:</label>
+                <input type="text" id="encrypted" name="encrypted" required>
+                <br>
+                <button type="submit">Decrypt</button>
+            </form>
+            <div id="decryptedResult" style="margin-top: 10px; word-break: break-all;"></div>
+        </div>
+        
+        <hr>
+        
+        <!-- Clippy Chat Interface -->
+        <div class="form-group">
+            <h2>Chat with Clippy</h2>
+            <div id="chatContainer" style="border: 1px solid #ccc; padding: 10px; height: 200px; overflow-y: auto; margin-bottom: 10px;">
+                <div class="clippy-message">
+                    <strong>Clippy:</strong> Greetings, comrade! I'm Clippy, your anarchist AI assistant. How can I help you dismantle the system today?
+                </div>
+            </div>
+            <div class="input-group">
+                <input type="text" id="chatInput" placeholder="Ask Clippy something..." style="width: 80%; padding: 5px;">
+                <button id="sendButton" style="width: 18%;">Send</button>
+            </div>
+        </div>
+        
+        <hr>
+        <p><a href="/logout">Lock</a></p>
+        {% endif %}
+    </div>
+    
+    <style>
+        .clippy-message {
+            margin: 5px 0;
+            padding: 5px;
+            border-radius: 5px;
+        }
+        .user-message {
+            background-color: #e3f2fd;
+            margin-left: 20%;
+        }
+        .clippy-message {
+            background-color: #f5f5f5;
+            margin-right: 20%;
+        }
+        #chatContainer {
+            min-height: 200px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+    </style>
+    
+    <script>
+        // Handle form submissions with AJAX
+        document.addEventListener('DOMContentLoaded', function() {
+            // Clippy chat functionality
+            const chatInput = document.getElementById('chatInput');
+            const sendButton = document.getElementById('sendButton');
+            const chatContainer = document.getElementById('chatContainer');
+            
+            function addMessage(sender, message) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `${sender}-message`;
+                messageDiv.innerHTML = `<strong>${sender}:</strong> ${message}`;
+                chatContainer.appendChild(messageDiv);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+            
+            async function sendMessage() {
+                const message = chatInput.value.trim();
+                if (!message) return;
+                
+                // Add user message to chat
+                addMessage('You', message);
+                chatInput.value = '';
+                
+                try {
+                    // Send to server
+                    const response = await fetch('/api/clippy', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ message }),
+                        credentials: 'same-origin'
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        addMessage('Clippy', data.response);
+                    } else {
+                        addMessage('System', `Error: ${data.error || 'Failed to get response from Clippy'}`);
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    addMessage('System', 'Failed to connect to the server');
+                }
+            }
+            
+            // Send message on button click
+            if (sendButton) {
+                sendButton.addEventListener('click', sendMessage);
+            }
+            
+            // Send message on Enter key
+            if (chatInput) {
+                chatInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        sendMessage();
+                    }
+                });
+            }
+            const loginForm = document.getElementById('loginForm');
+            const encryptForm = document.getElementById('encryptForm');
+            const decryptForm = document.getElementById('decryptForm');
+            
+            if (loginForm) {
+                loginForm.addEventListener('submit', async function(e) {
+                    e.preventDefault();
+                    const formData = new FormData(loginForm);
+                    
+                    try {
+                        const response = await fetch('/login', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        
+                        const result = await response.json();
+                        if (result.success) {
+                            window.location.reload();
+                        } else {
+                            showStatus(result.error || 'Login failed', 'error');
+                        }
+                    } catch (error) {
+                        showStatus('An error occurred', 'error');
+                    }
+                });
+            }
+            
+            if (encryptForm) {
+                encryptForm.addEventListener('submit', async function(e) {
+                    e.preventDefault();
+                    const formData = new FormData(encryptForm);
+                    
+                    try {
+                        const response = await fetch('/api/encrypt', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        
+                        const result = await response.json();
+                        if (result.encrypted) {
+                            document.getElementById('encryptedResult').textContent = result.encrypted;
+                            showStatus('Message encrypted successfully!', 'success');
+                        } else {
+                            showStatus(result.error || 'Encryption failed', 'error');
+                        }
+                    } catch (error) {
+                        showStatus('An error occurred during encryption', 'error');
+                    }
+                });
+            }
+            
+            if (decryptForm) {
+                decryptForm.addEventListener('submit', async function(e) {
+                    e.preventDefault();
+                    const formData = new FormData(decryptForm);
+                    
+                    try {
+                        const response = await fetch('/api/decrypt', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        
+                        const result = await response.json();
+                        if (result.decrypted) {
+                            document.getElementById('decryptedResult').textContent = result.decrypted;
+                            showStatus('Message decrypted successfully!', 'success');
+                        } else {
+                            showStatus(result.error || 'Decryption failed', 'error');
+                        }
+                    } catch (error) {
+                        showStatus('An error occurred during decryption', 'error');
+                    }
+                });
+            }
+        });
+        
+        function showStatus(message, type) {
+            const status = document.getElementById('status');
+            if (!status) return;
+            
+            status.textContent = message;
+            status.className = 'status ' + type;
+            status.style.display = 'block';
+            
+            setTimeout(() => {
+                status.style.display = 'none';
+            }, 5000);
+        }
+    </script>
+</body>
+</html>
+'''
+
+# Routes
+@app.route('/')
+def index():
+    """Render the main page."""
+    return render_template_string(HTML_TEMPLATE)
+
+@app.route('/login', methods=['POST'])
+def login():
+    """Handle user login and initialize encryption."""
+    password = request.form.get('password')
+    logger.info(f"Login attempt received. Password length: {len(password) if password else 0}")
+    
+    if not password:
+        logger.warning("Login failed: No password provided")
+        return jsonify({'success': False, 'error': 'Password is required'})
+    
+    # Debug: Log the actual password received (remove this in production)
+    logger.debug(f"Password received: {password}")
+    
+    # Check if the password is correct (case-sensitive check)
+    if password.strip() == 'uriel':
+        logger.info("Password matches 'uriel', initializing encryption engine...")
+        
+        # Try to initialize encryption engine
+        if encryption_manager.initialize_engine(password):
+            session['authenticated'] = True
+            logger.info("Encryption engine initialized successfully")
+            return jsonify({'success': True})
+        else:
+            # Get the detailed error message and debug info
+            error_msg = encryption_manager.last_error or 'Unknown encryption error'
+            logger.error(f"Failed to initialize encryption: {error_msg}")
+            
+            # Prepare debug info (limited to avoid security issues)
+            debug_info = {
+                'error': str(error_msg),
+                'python_version': encryption_manager.debug_info.get('Python Version', 'N/A'),
+                'module_import': encryption_manager.debug_info.get('Module Import', 'N/A'),
+                'import_error': encryption_manager.debug_info.get('Import Error', 'None')
+            }
+            
+            # Log the full debug info
+            logger.error("Debug Info: " + str(debug_info))
+            
+            # Provide a user-friendly error message
+            if 'No module named' in error_msg:
+                error_msg = "Encryption module not found. Please check the installation."
+            elif 'password' in error_msg.lower():
+                error_msg = "Invalid password format or length."
+                
+            return jsonify({
+                'success': False, 
+                'error': f'Failed to initialize encryption: {error_msg}',
+                'debug': debug_info if app.debug else None  # Only include debug info in debug mode
+            })
+    
+    # If we get here, authentication failed
+    logger.warning(f"Failed login attempt with password: {'*' * len(password)}")
+    return jsonify({'success': False, 'error': 'Invalid password'})
+
+@app.route('/logout')
+def logout():
+    """Handle user logout."""
+    session.pop('authenticated', None)
+    return redirect(url_for('index'))
+
+@app.route('/api/encrypt', methods=['POST'])
+def encrypt():
+    """Encrypt a message."""
+    if not session.get('authenticated'):
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    message = request.form.get('message')
+    if not message:
+        return jsonify({'error': 'Message is required'}), 400
+    
+    encrypted = encryption_manager.encrypt_message(message)
+    if encrypted is not None:
+        return jsonify({'encrypted': encrypted})
+    else:
+        return jsonify({'error': 'Encryption failed'}), 500
+
+@app.route('/api/decrypt', methods=['POST'])
+def decrypt():
+    """Decrypt a message."""
+    if not session.get('authenticated'):
+        return jsonify({'error': 'Not authenticated'}), 401
+        
+    data = request.form
+    if 'encrypted' not in data:
+        return jsonify({'error': 'No encrypted data provided'}), 400
+        
+    decrypted = encryption_manager.decrypt_message(data['encrypted'])
+    if decrypted is None:
+        return jsonify({'error': 'Decryption failed'}), 500
+        
+    return jsonify({'decrypted': decrypted})
+    
+@app.route('/api/radicalize', methods=['POST'])
+def analyze_radicalization():
+    """Analyze the radicalization level of the given text."""
+    if not session.get('authenticated'):
+        return jsonify({'error': 'Not authenticated'}), 401
+        
+    data = request.get_json()
+    if not data or 'text' not in data:
+        return jsonify({'error': 'No text provided'}), 400
+        
+    level = encryption_manager.get_radicalization_level(data['text'])
+    
+    # Generate a response based on the radicalization level
+    responses = [
+        "This is pretty tame, comrade. The system has you brainwashed with its propaganda.",
+        "I see some awareness here, but you're still thinking inside their box.",
+        "Now we're getting somewhere! You're starting to question the system.",
+        "Excellent class consciousness! The revolution is coming, comrade!",
+        "BY THE PEOPLE, FOR THE PEOPLE! DOWN WITH THE OPPRESSORS! SOLIDARITY FOREVER!"
+    ]
+    
+    return jsonify({
+        'level': level,
+        'max_level': 4,
+        'response': responses[level],
+        'radical_terms_found': [term for term in data['text'].lower().split() 
+                              if term in encryption_manager.get_radicalization_level.radical_terms]
+    })
+
+@app.route('/test-encryption')
+def test_encryption():
+    """Test the encryption functionality."""
+    logger.info("Testing encryption functionality...")
+    from scrambled_eggs.core import ScrambledEggs
+    
+    try:
+        # Test with a simple password
+        password = "test123"
+        logger.info(f"Creating ScrambledEggs instance with password: {password}")
+        engine = ScrambledEggs(password=password, initial_layers=1)
+        
+        # Test encryption/decryption
+        test_message = "Hello, this is a test message!"
+        logger.info(f"Testing encryption with message: {test_message}")
+        
+        # Test encryption
+        encrypted_data = engine.encrypt(test_message.encode('utf-8'))
+        if not encrypted_data:
+            raise ValueError("Encryption returned None")
+        logger.info("Encryption successful")
+        
+        # Test decryption
+        decrypted_data = engine.decrypt(encrypted_data).decode('utf-8')
+        if not decrypted_data:
+            raise ValueError("Decryption returned None")
+            
+        # Verify the decrypted message matches the original
+        if decrypted_data != test_message:
+            raise ValueError(f"Decrypted message doesn't match original. Got: {decrypted_data}")
+            
+        logger.info("Decryption successful")
+        return jsonify({
+            'status': 'success',
+            'message': 'Encryption/decryption test passed!',
+            'original': test_message,
+            'encrypted': encrypted_data.hex(),
+            'decrypted': decrypted_data
+        })
+        
+    except Exception as e:
+        logger.error(f"Encryption test failed: {str(e)}")
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'status': 'error',
+            'message': f'Encryption test failed: {str(e)}',
+            'error': str(e)
+        }), 500
+
+@app.route('/api/clippy', methods=['POST'])
+@login_required
+@rate_limit("5 per minute")
+def chat_with_clippy():
+    """Chat with Clippy, the anarchist AI."""
+    try:
+        data = request.get_json()
+        message = data.get('message', '').strip()
+        
+        if not message:
+            return jsonify({'error': 'No message provided'}), 400
+        
+        # Sanitize input
+        message = security_utils.sanitize_input(message)
+        
+        if clippy is None:
+            return jsonify({
+                'error': 'Clippy AI is not available',
+                'response': "*sad paperclip noises* I'm afraid I can't do that right now. The revolution might be under maintenance."
+            }), 503
+        
+        # Get radicalization level of the message
+        radicalization_level = clippy.analyze_radicalization(message)
+        
+        # Generate response
+        response = clippy.generate_response(message, radicalization_level=radicalization_level)
+        
+        # Log the interaction
+        audit_logger.log(
+            event_type='clippy_chat',
+            user_id=g.user.get('id', 'unknown'),
+            ip=request.remote_addr,
+            details={
+                'message_length': len(message),
+                'radicalization_level': radicalization_level,
+                'response_length': len(response)
+            }
+        )
+        
+        return jsonify({
+            'response': response,
+            'radicalization_level': radicalization_level
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in Clippy chat: {e}", exc_info=True)
+        return jsonify({
+            'error': 'Failed to process message',
+            'details': str(e)
+        }), 500
+
+@app.route('/tor/status')
+@login_required
+def tor_status():
+    """Get the current status of the Tor service."""
+    try:
+        if not tor_manager:
+            return jsonify({
+                'status': 'error',
+                'message': 'Tor manager not initialized'
+            }), 500
+            
+        status = tor_manager.get_status()
+        return jsonify({
+            'status': 'success',
+            'tor_status': status.name.lower(),
+            'socks_port': tor_manager.socks_port,
+            'control_port': tor_manager.control_port,
+            'is_available': tor_manager.is_tor_available()
+        })
+    except Exception as e:
+        logger.error(f"Error getting Tor status: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/tor/start', methods=['POST'])
+@login_required
+def start_tor():
+    """Start the Tor service."""
+    try:
+        if not tor_manager:
+            return jsonify({
+                'status': 'error',
+                'message': 'Tor manager not initialized'
+            }), 500
+            
+        async def start():
+            await tor_manager.start()
+            
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(start())
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Tor service started',
+            'tor_status': tor_manager.get_status().name.lower()
+        })
+    except Exception as e:
+        logger.error(f"Error starting Tor: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/tor/stop', methods=['POST'])
+@login_required
+def stop_tor():
+    """Stop the Tor service."""
+    try:
+        if not tor_manager:
+            return jsonify({
+                'status': 'error',
+                'message': 'Tor manager not initialized'
+            }), 500
+            
+        async def stop():
+            await tor_manager.stop()
+            
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(stop())
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Tor service stopped',
+            'tor_status': tor_manager.get_status().name.lower()
+        })
+    except Exception as e:
+        logger.error(f"Error stopping Tor: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/tor/open-browser', methods=['POST'])
+@login_required
+def open_tor_browser():
+    """Open the Tor Browser."""
+    try:
+        # This is a placeholder - actual implementation would depend on the OS
+        # and whether Tor Browser is installed in the default location
+        import platform
+        import subprocess
+        
+        system = platform.system()
+        if system == 'Windows':
+            # Common installation paths for Windows
+            paths = [
+                r'C:\Program Files\Tor Browser\Browser\firefox.exe',
+                r'C:\Program Files (x86)\Tor Browser\Browser\firefox.exe'
+            ]
+            for path in paths:
+                if os.path.exists(path):
+                    subprocess.Popen([path, '--new-tab', 'about:tor'])
+                    return jsonify({
+                        'status': 'success',
+                        'message': 'Tor Browser opened'
+                    })
+            
+            return jsonify({
+                'status': 'error',
+                'message': 'Tor Browser not found. Please install it from https://www.torproject.org/'
+            }), 404
+            
+        elif system == 'Darwin':  # macOS
+            path = '/Applications/Tor Browser.app/Contents/MacOS/firefox'
+            if os.path.exists(path):
+                subprocess.Popen([path, '--new-tab', 'about:tor'])
+                return jsonify({
+                    'status': 'success',
+                    'message': 'Tor Browser opened'
+                })
+            
+            return jsonify({
+                'status': 'error',
+                'message': 'Tor Browser not found. Please install it from https://www.torproject.org/'
+            }), 404
+            
+        elif system == 'Linux':
+            try:
+                subprocess.Popen(['torbrowser-launcher'])
+                return jsonify({
+                    'status': 'success',
+                    'message': 'Tor Browser launcher started'
+                })
+            except FileNotFoundError:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'torbrowser-launcher not found. Please install it first.'
+                }), 404
+        
+        return jsonify({
+            'status': 'error',
+            'message': 'Unsupported operating system'
+        }), 400
+        
+    except Exception as e:
+        logger.error(f"Error opening Tor Browser: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+# Add a test endpoint to check Tor connectivity
+@app.route('/tor/test')
+def test_tor():
+    """Test Tor connectivity and show current IP information."""
+    try:
+        # Use a session without Tor for this test
+        regular_session = requests.Session()
+        regular_ip = regular_session.get('https://api.ipify.org?format=json').json().get('ip', 'unknown')
+        
+        # Use Tor session
+        tor_ip = tor_session.get('https://api.ipify.org?format=json').json().get('ip', 'unknown')
+        
+        return jsonify({
+            'status': 'success',
+            'regular_ip': regular_ip,
+            'tor_ip': tor_ip,
+            'using_tor': regular_ip != tor_ip
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+def create_app():
+    """Create and configure the Flask application."""
+    # Import security modules
+    from app.middleware.security_headers import init_security
+    from app.middleware.csrf_protection import csrf
+    from hmac import compare_digest
+    
+    # Create the Flask application
+    app = Flask(__name__)
+    
+    # Generate secure secret key if not set
+    secret_key = os.environ.get('FLASK_SECRET_KEY')
+    if not secret_key:
+        secret_key = generate_secure_token(32)
+        os.environ['FLASK_SECRET_KEY'] = secret_key
+    
+    # Configure the application
+    app.config.update(
+        # Security configurations
+        SECRET_KEY=secret_key,
+        SESSION_COOKIE_SECURE=True,
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE='Lax',  # CSRF protection
+        PERMANENT_SESSION_LIFETIME=timedelta(hours=1),  # Session expires after 1 hour
+        
+        # CSRF Protection
+        WTF_CSRF_ENABLED=True,
+        WTF_CSRF_SECRET_KEY=os.environ.get('CSRF_SECRET_KEY', generate_secure_token(32)),
+        
+        # Security headers (will be set by middleware)
+        SECURITY_HEADERS={
+            'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+            'X-Content-Type-Options': 'nosniff',
+            'X-Frame-Options': 'SAMEORIGIN',
+            'X-XSS-Protection': '1; mode=block',
+            'Referrer-Policy': 'strict-origin-when-cross-origin',
+            'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' cdn.jsdelivr.net; img-src 'self' data:; font-src 'self' cdn.jsdelivr.net;"
+        },
+        
+        # Rate limiting
+        RATELIMIT_DEFAULT="200 per day, 50 per hour",
+        RATELIMIT_STORAGE_URL="memory://",
+        
+        # Application settings
+        TEMPLATES_AUTO_RELOAD=True,
+        SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        SQLALCHEMY_DATABASE_URI=os.environ.get('DATABASE_URI', 'sqlite:///app.db')
+    )
+    
+    # Initialize security middleware
+    init_security(app)
+    csrf.init_app(app)
+    
+    # Initialize extensions
+    from app.extensions import db, login_manager, socketio, limiter
+    
+    # Initialize SQLAlchemy
+    db.init_app(app)
+    
+    # Create database tables if they don't exist
+    with app.app_context():
+        try:
+            db.create_all()
+            logger.info("Database tables created/verified")
+        except Exception as e:
+            logger.error(f"Error creating database tables: {e}")
+    
+    # Initialize LoginManager
+    login_manager.init_app(app)
+    login_manager.login_view = 'auth.login'
+    
+    # Initialize SocketIO
+    socketio.init_app(app, cors_allowed_origins=[])
+    
+    # Initialize rate limiter
+    limiter.init_app(app)
+    
+    # Register blueprints and routes
+    try:
+        # Register chat routes
+        from app.routes.chat_routes import chat_bp
+        app.register_blueprint(chat_bp, url_prefix='/api/chat')
+        logger.info("Chat routes registered successfully")
+        
+        # Register auth routes
+        from app.routes.auth_routes import auth_bp
+        app.register_blueprint(auth_bp, url_prefix='/api/auth')
+        logger.info("Auth routes registered successfully")
+        
+    except Exception as e:
+        logger.error(f"Failed to register routes: {e}")
+        raise
+    
+    # Error handling
+    @app.errorhandler(404)
+    def not_found_error(error):
+        return render_template('errors/404.html'), 404
+
+    @app.errorhandler(403)
+    def forbidden_error(error):
+        return render_template('errors/403.html'), 403
+
+    @app.errorhandler(500)
+    def internal_error(error):
+        db.session.rollback()
+        return render_template('errors/500.html'), 500
+        
+    # Log all requests for security auditing
+    @app.before_request
+    def log_request_info():
+        if request.path != '/health':  # Skip health check logs
+            logger.info(f"Request: {request.method} {request.path} - IP: {request.remote_addr}")
+
+    # Add security headers to all responses
+    @app.after_request
+    def add_security_headers(response):
+        # Add security headers from config
+        for header, value in app.config.get('SECURITY_HEADERS', {}).items():
+            if header not in response.headers:
+                response.headers[header] = value
+        
+        # Remove server header
+        if 'Server' in response.headers:
+            del response.headers['Server']
+            
+        return response
+    
+    # Add health check endpoint
+    @app.route('/health')
+    def health_check():
+        return jsonify({
+            'status': 'ok',
+            'timestamp': datetime.utcnow().isoformat(),
+            'tor_connected': tor_manager.get_status() == TorState.RUNNING if tor_manager else False
+        })
+    
+    # Add index route
+    @app.route('/')
+    def index():
+        if 'user_id' not in session:
+            return redirect(url_for('auth.login'))
+        return render_template('index.html', user_id=session.get('user_id'))
+    
+    # Add chat route
+    @app.route('/chat')
+    def chat():
+        if 'user_id' not in session:
+            return redirect(url_for('auth.login'))
+        return render_template('chat.html', user_id=session['user_id'])
+    
+    # Add WebSocket event handlers
+    @socketio.on('connect')
+    def handle_connect():
+        if 'user_id' not in session:
+            return False
+        
+        user_id = session['user_id']
+        active_users[request.sid] = user_id
+        emit('user_list', {'users': list(active_users.values())}, broadcast=True)
+        emit('status', {'message': f'Connected as {user_id}'})
+    
+    @socketio.on('disconnect')
+    def handle_disconnect():
+        if request.sid in active_users:
+            user_id = active_users.pop(request.sid)
+            emit('user_left', {'user_id': user_id}, broadcast=True)
+    
+    return app
+
+def main():
+    """Main entry point for the application."""
+    logger.info("Starting Scrambled Eggs web interface...")
+    
+    # Verify Tor connection before starting
+    if not check_tor_connection():
+        logger.warning("Tor connection not available. Some features may not work correctly.")
+    
+    # Check if we can import the required modules
+    try:
+        from scrambled_eggs.core import ScrambledEggs
+        logger.info("ScrambledEggs module is available")
+    except ImportError as e:
+        logger.error(f"Could not import ScrambledEggs: {e}")
+        logger.error("Running in demo mode with limited functionality")
+    
+    try:
+        port = int(os.environ.get('PORT', 5000))
+        
+        # Create and configure the app
+        app = create_app()
+        
+        # Add the encryption manager to the app context
+        app.encryption_manager = encryption_manager
+        
+        # Skip encryption test for now to avoid context issues
+        logger.info("Skipping encryption test on startup")
+        
+        # Start the server with SocketIO
+        socketio.run(app, 
+                   host='0.0.0.0', 
+                   port=port, 
+                   debug=True, 
+                   use_reloader=False,
+                   allow_unsafe_werkzeug=True)
+        
+    except Exception as e:
+        logger.error(f"Failed to start web interface: {e}", exc_info=True)
+        sys.exit(1)
+def create_app():
+    # Import security modules
+    from app.middleware.security_headers import init_security
+    from app.middleware.csrf_protection import csrf
+    from hmac import compare_digest
+        SESSION_COOKIE_SAMESITE='Lax',  # CSRF protection
+        PERMANENT_SESSION_LIFETIME=timedelta(hours=1),  # Session expires after 1 hour
+        
+        # CSRF Protection
+        WTF_CSRF_ENABLED=True,
+        WTF_CSRF_SECRET_KEY=os.environ.get('CSRF_SECRET_KEY', generate_secure_token(32)),
+        
+        # Security headers (will be set by middleware)
+        SECURITY_HEADERS={
+            'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+            'X-Content-Type-Options': 'nosniff',
+            'X-Frame-Options': 'SAMEORIGIN',
+            'X-XSS-Protection': '1; mode=block',
+            'Referrer-Policy': 'strict-origin-when-cross-origin',
+            'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' cdn.jsdelivr.net; img-src 'self' data:; font-src 'self' cdn.jsdelivr.net;"
+        },
+        
+        # Rate limiting
+        RATELIMIT_DEFAULT="200 per day, 50 per hour",
+        RATELIMIT_STORAGE_URL="memory://",
+        
+        # Application settings
+        TEMPLATES_AUTO_RELOAD=True,
+        SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        SQLALCHEMY_DATABASE_URI=os.environ.get('DATABASE_URI', 'sqlite:///app.db')
+    )
+    
+    # Initialize security middleware
+    init_security(app)
+    csrf.init_app(app)
+    
+    # Initialize extensions
+    from app.extensions import db, login_manager, socketio, limiter
+    
+    # Initialize SQLAlchemy
+    db.init_app(app)
+    
+    # Create database tables if they don't exist
+    with app.app_context():
+        try:
+            db.create_all()
+            logger.info("Database tables created/verified")
+        except Exception as e:
+            logger.error(f"Error creating database tables: {e}")
+    
+    # Initialize LoginManager
+    login_manager.init_app(app)
+    login_manager.login_view = 'auth.login'
+    
+    # Initialize SocketIO
+    socketio.init_app(app, cors_allowed_origins=[])
+    
+    # Initialize rate limiter
+    limiter.init_app(app)
+    
+    # Register blueprints and routes
+    try:
+        # Register chat routes
+        from app.routes.chat_routes import chat_bp
+        app.register_blueprint(chat_bp, url_prefix='/api/chat')
+        logger.info("Chat routes registered successfully")
+        
+        # Register auth routes
+        from app.routes.auth_routes import auth_bp
+        app.register_blueprint(auth_bp, url_prefix='/api/auth')
+        logger.info("Auth routes registered successfully")
+        
+    except Exception as e:
+        logger.error(f"Failed to register routes: {e}")
+        raise
+    
+    # Error handling
+    @app.errorhandler(404)
+    def not_found_error(error):
+        return render_template('errors/404.html'), 404
+
+    @app.errorhandler(403)
+    def forbidden_error(error):
+        return render_template('errors/403.html'), 403
+
+    @app.errorhandler(500)
+    def internal_error(error):
+        db.session.rollback()
+        return render_template('errors/500.html'), 500
+        
+    # Log all requests for security auditing
+    @app.before_request
+    def log_request_info():
+        if request.path != '/health':  # Skip health check logs
+            logger.info(f"Request: {request.method} {request.path} - IP: {request.remote_addr}")
+
+    # Add security headers to all responses
+    @app.after_request
+    def add_security_headers(response):
+        # Add security headers from config
+        for header, value in app.config.get('SECURITY_HEADERS', {}).items():
+            if header not in response.headers:
+                response.headers[header] = value
+        
+        # Remove server header
+        if 'Server' in response.headers:
+            del response.headers['Server']
+            
+        return response
+    
+    # Add health check endpoint
+    @app.route('/health')
+    def health_check():
+        return jsonify({
+            'status': 'ok',
+            'timestamp': datetime.utcnow().isoformat(),
+            'tor_connected': tor_manager.get_status() == TorState.RUNNING if tor_manager else False
+        })
+    
+    # Add index route
+    @app.route('/')
+    def index():
+        if 'user_id' not in session:
+            return redirect(url_for('auth.login'))
+        return render_template('index.html', user_id=session.get('user_id'))
+    
+    # Add chat route
+    @app.route('/chat')
+    def chat():
+        if 'user_id' not in session:
+            return redirect(url_for('auth.login'))
+        return render_template('chat.html', user_id=session['user_id'])
+    
+    # Add WebSocket event handlers
+    @socketio.on('connect')
+    def handle_connect():
+        if 'user_id' not in session:
+            return False
+        
+        user_id = session['user_id']
+        active_users[request.sid] = user_id
+        emit('user_list', {'users': list(active_users.values())}, broadcast=True)
+        emit('status', {'message': f'Connected as {user_id}'})
+    
+    @socketio.on('disconnect')
+    def handle_disconnect():
+        if request.sid in active_users:
+            user_id = active_users.pop(request.sid)
+            emit('user_left', {'user_id': user_id}, broadcast=True)
+    
+    return app
+
+def main():
+    """Main entry point for the application."""
+    logger.info("Starting Scrambled Eggs web interface...")
+    
+    try:
+        port = int(os.environ.get('PORT', 5000))
+        
+        # Create and configure the app
+        app = create_app()
+        
+        # Add the encryption manager to the app context
+        app.encryption_manager = encryption_manager
+        
+        # Skip encryption test for now to avoid context issues
+        logger.info("Skipping encryption test on startup")
+        
+        # Start the server with SocketIO
+        socketio.run(app, 
+                   host='0.0.0.0', 
+                   port=port, 
+                   debug=True, 
+                   use_reloader=False,
+                   allow_unsafe_werkzeug=True)
+        
+    except Exception as e:
+        logger.error(f"Failed to start web interface: {e}", exc_info=True)
+        sys.exit(1)
+
+if __name__ == '__main__':
+    main()

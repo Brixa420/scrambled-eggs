@@ -1,0 +1,57 @@
+{
+  "key_e97335b6065d9303": {
+    "created_at": "2025-09-28T13:36:58.111364",
+    "key_size": 32,
+    "is_active": true,
+    "version": 1,
+    "algorithm": "AES-256-GCM",
+    "rotation_policy": "quarterly",
+    "tags": [
+      "system_generated"
+    ]
+  },
+  "key_2e0bc3d221bbae45": {
+    "created_at": "2025-09-28T13:37:26.739316",
+    "key_size": 32,
+    "is_active": true,
+    "version": 1,
+    "algorithm": "AES-256-GCM",
+    "rotation_policy": "quarterly",
+    "tags": [
+      "system_generated"
+    ]
+  },
+  "key_cc46042aeeaef2a3": {
+    "created_at": "2025-09-28T13:37:59.281792",
+    "key_size": 32,
+    "is_active": true,
+    "version": 1,
+    "algorithm": "AES-256-GCM",
+    "rotation_policy": "quarterly",
+    "tags": [
+      "system_generated"
+    ]
+  },
+  "key_8bfa5f20c4c5a0b1": {
+    "created_at": "2025-09-28T13:38:39.146639",
+    "key_size": 32,
+    "is_active": true,
+    "version": 1,
+    "algorithm": "AES-256-GCM",
+    "rotation_policy": "quarterly",
+    "tags": [
+      "system_generated"
+    ]
+  },
+  "key_e5858dc2895685e3": {
+    "created_at": "2025-09-28T13:39:15.804202",
+    "key_size": 32,
+    "is_active": true,
+    "version": 1,
+    "algorithm": "AES-256-GCM",
+    "rotation_policy": "quarterly",
+    "tags": [
+      "system_generated"
+    ]
+  }
+}

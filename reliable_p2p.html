@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Reliable P2P Video Chat</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 900px; 
+            margin: 0 auto; 
+            padding: 20px; 
+            line-height: 1.6;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .video-container {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        video {
+            width: 100%;
+            max-width: 400px;
+            background: #000;
+            border-radius: 4px;
+        }
+        .controls {
+            margin: 15px 0;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 8px 16px;
+            background: #4a6cf7;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:hover { background: #3a5bd9; }
+        button:disabled { 
+            background: #cccccc; 
+            cursor: not-allowed; 
+        }
+        #hangupButton { background: #e74c3c; }
+        #hangupButton:hover { background: #c0392b; }
+        .chat-box {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            height: 300px;
+            display: flex;
+            flex-direction: column;
+        }
+        #chatMessages {
+            flex: 1;
+            overflow-y: auto;
+            margin-bottom: 10px;
+            padding: 10px;
+            border: 1px solid #eee;
+            border-radius: 4px;
+        }
+        .chat-input {
+            display: flex;
+            gap: 10px;
+        }
+        #messageInput {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            background: #f8f9fa;
+            font-weight: bold;
+        }
+        .log {
+            margin-top: 20px;
+            padding: 10px;
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .message {
+            margin: 5px 0;
+            padding: 8px;
+            border-radius: 4px;
+            background: #e9ecef;
+        }
+        .message.self {
+            background: #d1e7ff;
+            text-align: right;
+        }
+        .message.system {
+            background: #fff3cd;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <h1>Reliable P2P Video Chat</h1>
+    
+    <div class="container">
+        <div class="video-container">
+            <h3>Local Stream</h3>
+            <video id="localVideo" autoplay playsinline muted></video>
+            
+            <div class="controls">
+                <button id="startButton">Start</button>
+                <button id="callButton" disabled>Call</button>
+                <button id="hangupButton" disabled>Hang Up</button>
+                <button id="toggleVideo" disabled>Start Video</button>
+            </div>
+            
+            <div id="status" class="status">Status: Not connected</div>
+            
+            <div class="log" id="debugLog"></div>
+        </div>
+        
+        <div class="video-container">
+            <h3>Remote Stream</h3>
+            <video id="remoteVideo" autoplay playsinline></video>
+            
+            <div class="chat-box">
+                <div id="chatMessages"></div>
+                <div class="chat-input">
+                    <input type="text" id="messageInput" placeholder="Type a message..." disabled>
+                    <button id="sendButton" disabled>Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const localVideo = document.getElementById('localVideo');
+        const remoteVideo = document.getElementById('remoteVideo');
+        const startButton = document.getElementById('startButton');
+        const callButton = document.getElementById('callButton');
+        const hangupButton = document.getElementById('hangupButton');
+        const toggleVideoButton = document.getElementById('toggleVideo');
+        const messageInput = document.getElementById('messageInput');
+        const sendButton = document.getElementById('sendButton');
+        const chatMessages = document.getElementById('chatMessages');
+        const statusDiv = document.getElementById('status');
+        const debugLog = document.getElementById('debugLog');
+
+        // WebRTC Variables
+        let localStream;
+        let peerConnection;
+        let dataChannel;
+        let isCaller = false;
+        const SIGNAL_KEY = 'p2p-signal';
+
+        // Logging
+        function log(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            entry.style.color = type === 'error' ? '#dc3545' : type === 'success' ? '#28a745' : '#6c757d';
+            debugLog.appendChild(entry);
+            debugLog.scrollTop = debugLog.scrollHeight;
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+
+        function logChat(message, isSelf = false, isSystem = false) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isSelf ? 'self' : ''} ${isSystem ? 'system' : ''}`;
+            messageDiv.textContent = message;
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Start local media
+        async function start() {
+            try {
+                log('Requesting media devices...');
+                localStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: true,
+                    video: false 
+                });
+                
+                localVideo.srcObject = localStream;
+                log('Local media ready');
+                
+                // Set up signaling
+                window.addEventListener('storage', handleSignal);
+                
+                // Enable UI
+                callButton.disabled = false;
+                toggleVideoButton.disabled = false;
+                
+                log('Ready to make or receive calls', 'success');
+                
+            } catch (err) {
+                log(`Error accessing media devices: ${err.message}`, 'error');
+            }
+        }
+
+        // Toggle video
+        async function toggleVideo() {
+            if (!localStream) return;
+            
+            try {
+                if (!localStream.getVideoTracks().length) {
+                    // Enable video
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    const videoTrack = stream.getVideoTracks()[0];
+                    localStream.addTrack(videoTrack);
+                    toggleVideoButton.textContent = 'Stop Video';
+                    log('Video enabled');
+                    
+                    // Update peer connection if in a call
+                    if (peerConnection) {
+                        const senders = peerConnection.getSenders();
+                        const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+                        
+                        if (videoSender) {
+                            await videoSender.replaceTrack(videoTrack);
+                        } else {
+                            peerConnection.addTrack(videoTrack, localStream);
+                        }
+                        
+                        // Re-negotiate the connection
+                        if (isCaller) {
+                            const offer = await peerConnection.createOffer();
+                            await peerConnection.setLocalDescription(offer);
+                            sendSignal({ type: 'offer', sdp: offer.sdp });
+                        }
+                    }
+                } else {
+                    // Disable video
+                    localStream.getVideoTracks().forEach(track => {
+                        track.stop();
+                        localStream.removeTrack(track);
+                    });
+                    toggleVideoButton.textContent = 'Start Video';
+                    log('Video disabled');
+                    
+                    // Update peer connection if in a call
+                    if (peerConnection) {
+                        const senders = peerConnection.getSenders();
+                        const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+                        
+                        if (videoSender) {
+                            peerConnection.removeTrack(videoSender);
+                            
+                            // Re-negotiate the connection
+                            if (isCaller) {
+                                const offer = await peerConnection.createOffer();
+                                await peerConnection.setLocalDescription(offer);
+                                sendSignal({ type: 'offer', sdp: offer.sdp });
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                log(`Error toggling video: ${err.message}`, 'error');
+            }
+        }
+
+        // Create peer connection
+        function createPeerConnection() {
+            try {
+                log('Creating peer connection...');
+                
+                const config = {
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' },
+                        { urls: 'stun:stun2.l.google.com:19302' }
+                    ]
+                };
+                
+                peerConnection = new RTCPeerConnection(config);
+                
+                // Add local tracks
+                localStream.getTracks().forEach(track => {
+                    peerConnection.addTrack(track, localStream);
+                    log(`Added local ${track.kind} track`);
+                });
+                
+                // Handle remote tracks
+                peerConnection.ontrack = (event) => {
+                    log(`Received remote ${event.track.kind} track`);
+                    
+                    if (!remoteVideo.srcObject) {
+                        remoteVideo.srcObject = new MediaStream();
+                    }
+                    
+                    const remoteStream = remoteVideo.srcObject;
+                    
+                    // Remove any existing track of the same type
+                    const existingTracks = remoteStream.getTracks()
+                        .filter(t => t.kind === event.track.kind);
+                        
+                    existingTracks.forEach(track => {
+                        track.stop();
+                        remoteStream.removeTrack(track);
+                    });
+                    
+                    // Add the new track
+                    remoteStream.addTrack(event.track);
+                    
+                    // Play the remote video
+                    if (event.track.kind === 'video') {
+                        remoteVideo.play().catch(err => {
+                            log(`Error playing remote video: ${err.message}`, 'error');
+                        });
+                    }
+                };
+                
+                // Set up data channel if caller
+                if (isCaller) {
+                    log('Creating data channel...');
+                    dataChannel = peerConnection.createDataChannel('chat', {
+                        ordered: true,
+                        maxRetransmits: 3
+                    });
+                    setupDataChannel();
+                } else {
+                    peerConnection.ondatachannel = (event) => {
+                        log('Data channel received');
+                        dataChannel = event.channel;
+                        setupDataChannel();
+                    };
+                }
+                
+                // ICE candidates
+                peerConnection.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        log('Sending ICE candidate');
+                        sendSignal({ 
+                            type: 'candidate', 
+                            candidate: event.candidate 
+                        });
+                    }
+                };
+                
+                // Connection state changes
+                peerConnection.oniceconnectionstatechange = () => {
+                    const state = peerConnection.iceConnectionState;
+                    log(`ICE connection state: ${state}`);
+                    
+                    if (state === 'disconnected' || state === 'failed') {
+                        log('Connection lost', 'error');
+                        hangUp();
+                    }
+                };
+                
+                log('Peer connection created', 'success');
+                return peerConnection;
+                
+            } catch (err) {
+                log(`Error creating peer connection: ${err.message}`, 'error');
+                throw err;
+            }
+        }
+
+        // Set up data channel
+        function setupDataChannel() {
+            if (!dataChannel) {
+                log('No data channel available', 'error');
+                return;
+            }
+            
+            dataChannel.onopen = () => {
+                log('Data channel opened', 'success');
+                messageInput.disabled = false;
+                sendButton.disabled = false;
+                statusDiv.textContent = 'Status: Connected';
+                logChat('Connected to peer', false, true);
+                
+                // Send a test message to verify the channel
+                try {
+                    dataChannel.send('CHAT_READY');
+                    log('Sent chat ready message');
+                } catch (err) {
+                    log(`Error sending test message: ${err.message}`, 'error');
+                }
+            };
+            
+            dataChannel.onclose = () => {
+                log('Data channel closed');
+                messageInput.disabled = true;
+                sendButton.disabled = true;
+                statusDiv.textContent = 'Status: Disconnected';
+                logChat('Disconnected from peer', false, true);
+            };
+            
+            dataChannel.onmessage = (event) => {
+                log(`Received message: ${event.data}`);
+                
+                if (event.data === 'CHAT_READY') {
+                    logChat('Chat connection established', false, true);
+                } else {
+                    logChat(event.data, false);
+                }
+            };
+            
+            dataChannel.onerror = (error) => {
+                log(`Data channel error: ${error}`, 'error');
+            };
+        }
+
+        // Send signal
+        function sendSignal(signal) {
+            log(`Sending signal: ${signal.type}`);
+            localStorage.setItem(SIGNAL_KEY, JSON.stringify(signal));
+            // Clean up after sending
+            setTimeout(() => localStorage.removeItem(SIGNAL_KEY), 100);
+        }
+
+        // Handle incoming signals
+        async function handleSignal(event) {
+            if (event.key !== SIGNAL_KEY || !event.newValue) return;
+            
+            try {
+                const signal = JSON.parse(event.newValue);
+                log(`Received signal: ${signal.type}`);
+                
+                if (!peerConnection && signal.type !== 'offer') {
+                    log('No active peer connection for non-offer signal', 'error');
+                    return;
+                }
+                
+                switch (signal.type) {
+                    case 'offer':
+                        log('Received offer, creating peer connection...');
+                        isCaller = false;
+                        createPeerConnection();
+                        
+                        try {
+                            await peerConnection.setRemoteDescription(new RTCSessionDescription(signal));
+                            log('Set remote description');
+                            
+                            const answer = await peerConnection.createAnswer();
+                            await peerConnection.setLocalDescription(answer);
+                            log('Created answer');
+                            
+                            sendSignal({ 
+                                type: 'answer', 
+                                sdp: answer.sdp 
+                            });
+                            
+                            hangupButton.disabled = false;
+                            callButton.disabled = true;
+                            statusDiv.textContent = 'Status: In call (callee)';
+                            
+                        } catch (err) {
+                            log(`Error handling offer: ${err.message}`, 'error');
+                            hangUp();
+                        }
+                        break;
+                        
+                    case 'answer':
+                        log('Received answer');
+                        try {
+                            await peerConnection.setRemoteDescription(
+                                new RTCSessionDescription(signal)
+                            );
+                            statusDiv.textContent = 'Status: In call (caller)';
+                            log('Call connected!', 'success');
+                        } catch (err) {
+                            log(`Error setting remote description: ${err.message}`, 'error');
+                            hangUp();
+                        }
+                        break;
+                        
+                    case 'candidate':
+                        if (signal.candidate) {
+                            try {
+                                await peerConnection.addIceCandidate(
+                                    new RTCIceCandidate(signal.candidate)
+                                );
+                                log('Added ICE candidate');
+                            } catch (err) {
+                                if (err.name !== 'TypeError') {
+                                    log(`Error adding ICE candidate: ${err.message}`, 'error');
+                                }
+                            }
+                        }
+                        break;
+                }
+            } catch (err) {
+                log(`Error handling signal: ${err.message}`, 'error');
+            }
+        }
+
+        // Start call
+        async function call() {
+            if (peerConnection) {
+                log('Call already in progress', 'error');
+                return;
+            }
+            
+            try {
+                isCaller = true;
+                log('Initiating call...');
+                
+                createPeerConnection();
+                
+                const offer = await peerConnection.createOffer({
+                    offerToReceiveAudio: true,
+                    offerToReceiveVideo: true
+                });
+                
+                await peerConnection.setLocalDescription(offer);
+                log('Created offer');
+                
+                sendSignal({ 
+                    type: 'offer', 
+                    sdp: offer.sdp 
+                });
+                
+                callButton.disabled = true;
+                hangupButton.disabled = false;
+                statusDiv.textContent = 'Status: Calling...';
+                
+                log('Call initiated, waiting for answer...');
+                
+            } catch (err) {
+                log(`Call error: ${err.message}`, 'error');
+                hangUp();
+            }
+        }
+
+        // Hang up
+        function hangUp() {
+            log('Ending call...');
+            
+            // Close peer connection
+            if (peerConnection) {
+                // Close all transceivers
+                peerConnection.getTransceivers().forEach(transceiver => {
+                    if (transceiver.stop) {
+                        transceiver.stop();
+                    }
+                });
+                
+                // Close the connection
+                peerConnection.close();
+                peerConnection = null;
+            }
+            
+            // Close data channel
+            if (dataChannel) {
+                dataChannel.close();
+                dataChannel = null;
+            }
+            
+            // Reset remote video
+            if (remoteVideo.srcObject) {
+                remoteVideo.srcObject.getTracks().forEach(track => track.stop());
+                remoteVideo.srcObject = null;
+            }
+            
+            // Reset UI
+            callButton.disabled = false;
+            hangupButton.disabled = true;
+            messageInput.disabled = true;
+            sendButton.disabled = true;
+            
+            if (localStream) {
+                // Keep local video track if it exists
+                const videoTracks = localStream.getVideoTracks();
+                if (videoTracks.length > 0) {
+                    toggleVideoButton.textContent = 'Stop Video';
+                } else {
+                    toggleVideoButton.textContent = 'Start Video';
+                }
+            }
+            
+            statusDiv.textContent = 'Status: Disconnected';
+            log('Call ended');
+            logChat('Call ended', false, true);
+        }
+
+        // Send chat message
+        function sendMessage() {
+            const message = messageInput.value.trim();
+            if (!message) return;
+            
+            if (!dataChannel || dataChannel.readyState !== 'open') {
+                log('Cannot send message: Data channel not ready', 'error');
+                return;
+            }
+            
+            try {
+                dataChannel.send(message);
+                logChat(`You: ${message}`, true);
+                messageInput.value = '';
+                messageInput.focus();
+            } catch (err) {
+                log(`Error sending message: ${err.message}`, 'error');
+            }
+        }
+
+        // Event Listeners
+        startButton.addEventListener('click', start);
+        callButton.addEventListener('click', call);
+        hangupButton.addEventListener('click', hangUp);
+        toggleVideoButton.addEventListener('click', toggleVideo);
+        
+        sendButton.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+        
+        // Initialize
+        log('Page loaded. Click Start to begin.');
+    </script>
+</body>
+</html>

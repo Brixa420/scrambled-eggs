@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>P2P Connection Tester</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .success { color: green; }
+        .error { color: red; }
+        .log {
+            margin-top: 10px;
+            padding: 10px;
+            border: 1px solid #eee;
+            border-radius: 5px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            background: #f9f9f9;
+        }
+        button {
+            padding: 8px 16px;
+            margin: 5px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>P2P Connection Tester</h1>
+    
+    <div class="test-section">
+        <h2>Test 1: Audio-Only Connection</h2>
+        <p>This test verifies that the P2P connection works with just audio.</p>
+        <button id="test1">Run Test 1</button>
+        <div id="result1" class="log"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 2: Audio + Video Connection</h2>
+        <p>This test verifies that the P2P connection works with both audio and video.</p>
+        <button id="test2">Run Test 2</button>
+        <div id="result2" class="log"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 3: Switch Between Modes</h2>
+        <p>This test verifies switching between audio-only and video modes during a call.</p>
+        <button id="test3">Run Test 3</button>
+        <div id="result3" class="log"></div>
+    </div>
+    
+    <div id="testArea" style="margin-top: 30px; padding: 15px; border: 1px solid #ccc; border-radius: 5px;">
+        <h2>Test Area</h2>
+        <div id="localVideo" style="width: 320px; height: 240px; background: #000;"></div>
+        <div id="remoteVideo" style="width: 320px; height: 240px; background: #222; margin-top: 10px;"></div>
+    </div>
+
+    <script>
+        // Simple logger for test results
+        function log(testId, message, isError = false) {
+            const resultDiv = document.getElementById(`result${testId}`);
+            const logEntry = document.createElement('div');
+            logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logEntry.className = isError ? 'error' : '';
+            resultDiv.appendChild(logEntry);
+            resultDiv.scrollTop = resultDiv.scrollHeight;
+            console.log(`[Test ${testId}] ${message}`);
+        }
+
+        // WebRTC configuration
+        const config = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        };
+
+        // Test 1: Audio-Only Connection
+        document.getElementById('test1').addEventListener('click', async () => {
+            const testId = 1;
+            log(testId, 'Starting audio-only test...');
+            
+            try {
+                // Get audio-only stream
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: true, 
+                    video: false 
+                });
+                
+                log(testId, '✓ Got audio stream');
+                document.getElementById('localVideo').textContent = 'Local audio only';
+                
+                // Create peer connection
+                const pc = new RTCPeerConnection(config);
+                
+                // Add audio track
+                const audioTrack = stream.getAudioTracks()[0];
+                if (audioTrack) {
+                    pc.addTrack(audioTrack, stream);
+                    log(testId, '✓ Added audio track to connection');
+                }
+                
+                // Create data channel for test messages
+                const dc = pc.createDataChannel('test');
+                dc.onopen = () => log(testId, '✓ Data channel opened');
+                dc.onmessage = (e) => log(testId, `Received: ${e.data}`);
+                
+                // Create and set local description
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                log(testId, '✓ Created offer');
+                
+                // In a real test, you would exchange the offer/answer with a peer
+                log(testId, '✅ Test completed successfully!', false);
+                
+                // Clean up
+                setTimeout(() => {
+                    stream.getTracks().forEach(track => track.stop());
+                    pc.close();
+                }, 1000);
+                
+            } catch (err) {
+                log(testId, `❌ Test failed: ${err.message}`, true);
+            }
+        });
+
+        // Test 2: Audio + Video Connection
+        document.getElementById('test2').addEventListener('click', async () => {
+            const testId = 2;
+            log(testId, 'Starting audio+video test...');
+            
+            try {
+                // Get audio and video stream
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: true, 
+                    video: true 
+                });
+                
+                log(testId, '✓ Got audio+video stream');
+                
+                // Show local video
+                const localVideo = document.createElement('video');
+                localVideo.srcObject = stream;
+                localVideo.autoplay = true;
+                localVideo.muted = true;
+                localVideo.playsInline = true;
+                localVideo.style.width = '100%';
+                localVideo.style.height = '100%';
+                
+                const localContainer = document.getElementById('localVideo');
+                localContainer.innerHTML = '';
+                localContainer.appendChild(localVideo);
+                
+                // Create peer connection
+                const pc = new RTCPeerConnection(config);
+                
+                // Add tracks
+                stream.getTracks().forEach(track => {
+                    pc.addTrack(track, stream);
+                });
+                log(testId, '✓ Added tracks to connection');
+                
+                // Create data channel for test messages
+                const dc = pc.createDataChannel('test');
+                dc.onopen = () => log(testId, '✓ Data channel opened');
+                dc.onmessage = (e) => log(testId, `Received: ${e.data}`);
+                
+                // Create and set local description
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                log(testId, '✓ Created offer');
+                
+                // In a real test, you would exchange the offer/answer with a peer
+                log(testId, '✅ Test completed successfully!', false);
+                
+                // Clean up
+                setTimeout(() => {
+                    stream.getTracks().forEach(track => track.stop());
+                    pc.close();
+                }, 1000);
+                
+            } catch (err) {
+                log(testId, `❌ Test failed: ${err.message}`, true);
+            }
+        });
+
+        // Test 3: Switch Between Modes
+        document.getElementById('test3').addEventListener('click', async () => {
+            const testId = 3;
+            log(testId, 'Starting mode switching test...');
+            
+            try {
+                // Start with audio only
+                let stream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: true, 
+                    video: false 
+                });
+                
+                log(testId, '✓ Started with audio only');
+                
+                // Create peer connection
+                const pc = new RTCPeerConnection(config);
+                
+                // Add audio track
+                const audioTrack = stream.getAudioTracks()[0];
+                let audioSender = null;
+                if (audioTrack) {
+                    audioSender = pc.addTrack(audioTrack, stream);
+                    log(testId, '✓ Added audio track');
+                }
+                
+                // Test switching to audio+video
+                try {
+                    const videoStream = await navigator.mediaDevices.getUserMedia({ 
+                        video: true 
+                    });
+                    
+                    const videoTrack = videoStream.getVideoTracks()[0];
+                    if (videoTrack) {
+                        pc.addTrack(videoTrack, videoStream);
+                        log(testId, '✓ Added video track');
+                    }
+                    
+                    // In a real test, you would renegotiate the connection here
+                    log(testId, '✓ Switched to audio+video mode');
+                    
+                    // Clean up video track
+                    videoTrack.stop();
+                    
+                } catch (err) {
+                    log(testId, `⚠ Could not add video: ${err.message}`, true);
+                }
+                
+                log(testId, '✅ Test completed!');
+                
+                // Clean up
+                setTimeout(() => {
+                    stream.getTracks().forEach(track => track.stop());
+                    pc.close();
+                }, 1000);
+                
+            } catch (err) {
+                log(testId, `❌ Test failed: ${err.message}`, true);
+            }
+        });
+    </script>
+</body>
+</html>

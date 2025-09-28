@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+
+{% block title %}Home - Scrambled Eggs{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 mx-auto text-center">
+        <div class="p-5 mb-4 bg-light rounded-3">
+            <div class="container-fluid py-5">
+                <h1 class="display-5 fw-bold">Secure File Sharing</h1>
+                <p class="fs-4">Encrypted, fast, and reliable file transfers with end-to-end encryption</p>
+                <div class="d-grid gap-2 d-sm-flex justify-content-sm-center">
+                    <a href="{{ url_for('web.upload') }}" class="btn btn-primary btn-lg px-4 gap-3">
+                        <i class="bi bi-cloud-arrow-up"></i> Upload Files
+                    </a>
+                    <button class="btn btn-outline-secondary btn-lg px-4" type="button" id="receiveFilesBtn">
+                        <i class="bi bi-download"></i> Receive Files
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-arrow-up-circle"></i> Recent Uploads</h5>
+            </div>
+            <div class="card-body">
+                <div class="list-group list-group-flush" id="recentUploads">
+                    <div class="list-group-item">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">document.pdf</h6>
+                            <small>2 hours ago</small>
+                        </div>
+                        <div class="progress mt-2" style="height: 5px;">
+                            <div class="progress-bar bg-success" role="progressbar" style="width: 100%" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100"></div>
+                        </div>
+                        <small>5.2 MB - Complete</small>
+                    </div>
+                    <!-- More uploads will be added dynamically -->
+                </div>
+                <div class="text-center mt-3">
+                    <a href="{{ url_for('web.transfers') }}" class="btn btn-sm btn-outline-primary">View All Transfers</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-speedometer2"></i> Transfer Stats</h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-4">
+                        <div class="display-6">24</div>
+                        <small class="text-muted">Files Shared</small>
+                    </div>
+                    <div class="col-4">
+                        <div class="display-6">1.2GB</div>
+                        <small class="text-muted">Total Transferred</small>
+                    </div>
+                    <div class="col-4">
+                        <div class="display-6">12</div>
+                        <small class="text-muted">Active Transfers</small>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <span>Storage Used</span>
+                        <span>35%</span>
+                    </div>
+                    <div class="progress">
+                        <div class="progress-bar" role="progressbar" style="width: 35%" aria-valuenow="35" aria-valuemin="0" aria-valuemax="100"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-shield-lock"></i> Security Status</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="d-flex align-items-center mb-3">
+                            <div class="me-3">
+                                <i class="bi bi-shield-check text-success" style="font-size: 2rem;"></i>
+                            </div>
+                            <div>
+                                <h6 class="mb-0">End-to-End Encryption</h6>
+                                <small class="text-muted">All files are encrypted</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="d-flex align-items-center mb-3">
+                            <div class="me-3">
+                                <i class="bi bi-key text-primary" style="font-size: 2rem;"></i>
+                            </div>
+                            <div>
+                                <h6 class="mb-0">Secure Key Exchange</h6>
+                                <small class="text-muted">Using ECDH-256</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="d-flex align-items-center mb-3">
+                            <div class="me-3">
+                                <i class="bi bi-shield-lock text-warning" style="font-size: 2rem;"></i>
+                            </div>
+                            <div>
+                                <h6 class="mb-0">No Data Retention</h6>
+                                <small class="text-muted">Files are never stored unencrypted</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize tooltips
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+
+    // Handle receive files button
+    document.getElementById('receiveFilesBtn').addEventListener('click', function() {
+        // Show receive files modal
+        var receiveModal = new bootstrap.Modal(document.getElementById('receiveFilesModal'));
+        receiveModal.show();
+    });
+
+    // Load recent uploads
+    loadRecentUploads();
+});
+
+function loadRecentUploads() {
+    // This would be an AJAX call to your backend in a real application
+    // fetch('/api/uploads/recent')
+    //     .then(response => response.json())
+    //     .then(data => {
+    //         updateUploadsList(data);
+    //     });
+}
+
+function updateUploadsList(uploads) {
+    const container = document.getElementById('recentUploads');
+    container.innerHTML = ''; // Clear existing items
+    
+    uploads.forEach(upload => {
+        const item = document.createElement('div');
+        item.className = 'list-group-item';
+        item.innerHTML = `
+            <div class="d-flex w-100 justify-content-between">
+                <h6 class="mb-1">${upload.filename}</h6>
+                <small>${formatTimeAgo(upload.timestamp)}</small>
+            </div>
+            <div class="progress mt-2" style="height: 5px;">
+                <div class="progress-bar bg-success" role="progressbar" 
+                     style="width: ${upload.progress}%" 
+                     aria-valuenow="${upload.progress}" 
+                     aria-valuemin="0" 
+                     aria-valuemax="100">
+                </div>
+            </div>
+            <small>${formatFileSize(upload.size)} - ${upload.status}</small>
+        `;
+        container.appendChild(item);
+    });
+}
+
+function formatTimeAgo(timestamp) {
+    // Implementation for time ago formatting
+    return '2 hours ago';
+}
+
+function formatFileSize(bytes) {
+    // Implementation for file size formatting
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+</script>
+{% endblock %}
