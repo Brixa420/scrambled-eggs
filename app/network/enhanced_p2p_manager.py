@@ -11,24 +11,26 @@ import socket
 import struct
 import time
 import uuid
-from typing import Dict, List, Optional, Any, Callable, Set, Tuple, Union
-from dataclasses import dataclass, field
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
+
+from cryptography.exceptions import InvalidKey, InvalidSignature
 from cryptography.fernet import Fernet, InvalidToken
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import rsa, padding
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives import padding as sym_padding
-from cryptography.exceptions import InvalidSignature, InvalidKey
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 # Third-party imports
 try:
     import stem
     import stem.control
-    from stem.control import Controller
     from stem import process
+    from stem.control import Controller
     from stem.util import term
     TOR_AVAILABLE = True
 except ImportError:
@@ -43,8 +45,10 @@ except ImportError:
     logger.warning("STUN not available. Install with: pip install pystun3")
 
 # Import our custom modules
-from .dht_manager import DHTManager, PeerInfo as DHT_PeerInfo
-from .mdns_manager import MDNSManager, PeerInfo as MDNS_PeerInfo
+from .dht_manager import DHTManager
+from .dht_manager import PeerInfo as DHT_PeerInfo
+from .mdns_manager import MDNSManager
+from .mdns_manager import PeerInfo as MDNS_PeerInfo
 
 logger = logging.getLogger(__name__)
 
@@ -1343,9 +1347,9 @@ class EnhancedP2PManager:
 
 # Example usage
 if __name__ == "__main__":
-    import logging
     import asyncio
-    
+    import logging
+
     # Configure logging
     logging.basicConfig(
         level=logging.INFO,

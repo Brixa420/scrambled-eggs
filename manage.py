@@ -4,10 +4,14 @@ Management script for the Scrambled Eggs application.
 """
 import os
 import sys
+
 import click
-from flask_migrate import Migrate, upgrade, migrate as migrate_db, init, stamp
-from web_app import create_app
+from flask_migrate import Migrate, init
+from flask_migrate import migrate as migrate_db
+from flask_migrate import stamp, upgrade
+
 from app.extensions import db
+from web_app import create_app
 
 app = create_app()
 migrate = Migrate(app, db)

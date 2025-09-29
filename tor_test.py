@@ -1,10 +1,12 @@
 """
 Test script to verify Tor connection.
 """
-import requests
 import socket
-import socks
 import sys
+
+import requests
+import socks
+
 
 def test_tor_connection():
     """Test if Tor connection is working."""

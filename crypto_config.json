@@ -1,0 +1,19 @@
+{
+  "protocols": {
+    "aes-256-gcm": {
+      "name": "aes-256-gcm",
+      "version": "1.0",
+      "algorithm": "AES",
+      "key_size": 256,
+      "mode": "GCM",
+      "padding": "PKCS7",
+      "kdf_iterations": 100000,
+      "hmac_algorithm": "SHA256",
+      "is_active": true,
+      "created_at": 1759125769.564971,
+      "last_updated": 1759125769.564971
+    }
+  },
+  "current_protocol": "aes-256-gcm",
+  "last_updated": 1759125769.564971
+}

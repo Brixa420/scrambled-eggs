@@ -1,0 +1,27 @@
+[
+  {
+    "version": 1,
+    "index": 0,
+    "timestamp": 1735707600.0,
+    "previous_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "merkle_root": "0000000000000000000000000000000000000000000000000000000000000000",
+    "nonce": 0,
+    "difficulty": 4,
+    "hash": "7671120b88fa2492be23035dd7abe189d5eee664900883b03bc04af05c2d6223",
+    "transactions": [
+      {
+        "txid": "0000000000000000000000000000000000000000000000000000000000000000",
+        "version": 1,
+        "inputs": [],
+        "outputs": [
+          {
+            "value": 0,
+            "script_pubkey": "Brixa Genesis Block",
+            "address": "B1TCO1NST1TUT1ON"
+          }
+        ],
+        "locktime": 0
+      }
+    ]
+  }
+]

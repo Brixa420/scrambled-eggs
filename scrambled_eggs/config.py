@@ -1,22 +1,21 @@
-""
 """
-Configuration management for Scrambled Eggs P2P Messaging.
+Brixa - Decentralized Server Configuration
+
+This file contains all configuration settings for the Brixa decentralized server.
 """
-import os
 import json
 import logging
+import os
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Union
+from typing import Any, Dict, List, Optional, Union
 
-class Config:
-    """Configuration manager for Scrambled Eggs."""
-    
-    # Default configuration
-    DEFAULTS = {
-        # Antarctica routing settings
-        "antarctica_routing": {
-            "enabled": True,  # Enable/disable Antarctica routing
-            "proxies": [
+APP_NAME = os.getenv('APP_NAME', 'Brixa')
+
+DEFAULTS = {
+    # Antarctica routing settings
+    "antarctica_routing": {
+        "enabled": True,  # Enable/disable Antarctica routing
+        "proxies": [
                 "antarctica-proxy1.example.com:3128",
                 "antarctica-proxy2.example.com:3128",
                 "antarctica-proxy3.example.com:3128"
@@ -510,22 +509,20 @@ class Config:
         return self._config.copy()
     
     @staticmethod
-    def _merge_configs(base: Dict[str, Any], custom: Dict[str, Any]) -> Dict[str, Any]:
-        """Recursively merge two configuration dictionaries."""
-        result = base.copy()
+    def _merge_dicts(dict1: Dict, dict2: Dict) -> Dict:
+        """Recursively merge two dictionaries."""
+        result = dict1.copy()
         
-        for key, value in custom.items():
+        for key, value in dict2.items():
             if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-                result[key] = Config._merge_configs(result[key], value)
+                result[key] = Config._merge_dicts(result[key], value)
             else:
                 result[key] = value
-                
+        
         return result
 
 # Global configuration instance
 config = Config()
-
-def get_config() -> Config:
     """Get the global configuration instance."""
     return config
 

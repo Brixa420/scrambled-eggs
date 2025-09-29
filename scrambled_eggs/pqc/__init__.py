@@ -13,4 +13,4 @@ Supported Algorithms:
 from .crypto import PQCrypto
 
 # For backward compatibility, we'll keep the PQCrypto class as the main export
-__all__ = ['PQCrypto']
+__all__ = ["PQCrypto"]

@@ -1,14 +1,17 @@
 """
 Contact model for storing user contacts.
 """
+
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
-from pydantic import BaseModel, Field, EmailStr
+from typing import Optional
+
+from pydantic import BaseModel, EmailStr, Field
 
 
 class ContactStatus(str, Enum):
     """Status of a contact."""
+
     ONLINE = "online"
     OFFLINE = "offline"
     AWAY = "away"
@@ -17,6 +20,7 @@ class ContactStatus(str, Enum):
 
 class Contact(BaseModel):
     """Contact model."""
+
     id: str = Field(..., description="Unique identifier for the contact")
     user_id: str = Field(..., description="ID of the user who owns this contact")
     name: str = Field(..., description="Display name of the contact")
@@ -30,6 +34,7 @@ class Contact(BaseModel):
 
     class Config:
         """Pydantic config."""
+
         json_encoders = {
             datetime: lambda v: v.isoformat(),
         }
@@ -40,6 +45,6 @@ class Contact(BaseModel):
         return self.dict()
 
     @classmethod
-    def from_dict(cls, data: dict) -> 'Contact':
+    def from_dict(cls, data: dict) -> "Contact":
         """Create contact from dictionary."""
         return cls(**data)

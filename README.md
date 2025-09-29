@@ -1,6 +1,6 @@
-# Scrambled Eggs 🥚🔒
+# Brixa
 
-A revolutionary secure communication platform powered by Clippy, the autonomous AI security orchestrator. Scrambled Eggs provides private, end-to-end encrypted P2P communication with self-modifying encryption that evolves and improves over time. Backed by Tor network integration and advanced cryptographic protocols, it ensures maximum privacy and security for all your communications.
+A revolutionary secure communication platform powered by Clippy, the autonomous AI security orchestrator. Brixa provides private, end-to-end encrypted P2P communication with self-modifying encryption that evolves and improves over time. Backed by Tor network integration and advanced cryptographic protocols, it ensures maximum privacy and security for all your communications.
 
 ## 🌟 Features
 
@@ -132,20 +132,17 @@ A revolutionary secure communication platform powered by Clippy, the autonomous 
 
 ```bash
 # Start the application
-scrambled-eggs
+brixa
 
 # Start in debug mode
-scrambled-eggs --debug
+brixa --debug
 
 # Specify a custom config file
-scrambled-eggs --config /path/to/config.json
-```
-
-# Decrypt a file
+brixa --config /path/to/config.json
 scrambled-eggs decrypt file.enc --output file.txt
 
 # Check system security status
-scrambled-eggs status
+brixa status
 ```
 
 ### Python API

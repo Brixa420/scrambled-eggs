@@ -1,6 +1,7 @@
 """
 Test package for Scrambled Eggs application.
 """
+
 import os
 import sys
 from pathlib import Path

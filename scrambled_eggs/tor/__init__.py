@@ -7,22 +7,26 @@ anonymous communication in the Scrambled Eggs P2P messaging application.
 
 __version__ = "1.0.0"
 
+from .exceptions import (
+    TorConfigurationError,
+    TorConnectionError,
+    TorError,
+    TorServiceError,
+    TorStartupError,
+)
+from .onion_service import OnionService, OnionServiceConfig
+
 # Import key components to make them available at the package level
 from .tor_manager import TorManager, TorState
-from .onion_service import OnionService, OnionServiceConfig
-from .exceptions import (
-    TorError, TorConnectionError, TorServiceError,
-    TorStartupError, TorConfigurationError
-)
 
 __all__ = [
-    'TorManager',
-    'TorState',
-    'OnionService',
-    'OnionServiceConfig',
-    'TorError',
-    'TorConnectionError',
-    'TorServiceError',
-    'TorStartupError',
-    'TorConfigurationError'
+    "TorManager",
+    "TorState",
+    "OnionService",
+    "OnionServiceConfig",
+    "TorError",
+    "TorConnectionError",
+    "TorServiceError",
+    "TorStartupError",
+    "TorConfigurationError",
 ]

@@ -2,8 +2,8 @@
 Memory protection patch for Scrambled Eggs.
 This file provides mock implementations for missing memory protection functionality.
 ""
-import sys
 import logging
+import sys
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +30,7 @@ class MemoryProtection:
 
 # Apply the patch
 import scrambled_eggs.security.memory_protection as mp
+
 mp.MemoryProtector = MemoryProtection
 
 logger.info("Memory protection patch applied")
