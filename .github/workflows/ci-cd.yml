@@ -1,61 +1,346 @@
-name: CI/CD Pipeline
+name: Scrambled Eggs CI/CD
 
 on:
   push:
     branches: [ main, develop ]
   pull_request:
     branches: [ main, develop ]
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM for security updates
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: .
+
+env:
+  PYTHON_VERSION: '3.9'
+  DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
+  REDIS_URL: redis://localhost:6379/0
+  FLASK_APP: app.factory:create_app
+  FLASK_ENV: test
 
 jobs:
-  test:
+  lint:
+    name: Lint and Code Style
     runs-on: ubuntu-latest
+    
     steps:
     - uses: actions/checkout@v3
     
-    - name: Use Node.js
-      uses: actions/setup-node@v3
+    - name: Set up Python ${{ env.PYTHON_VERSION }}
+      uses: actions/setup-python@v4
       with:
-        node-version: '18'
-        cache: 'npm'
+        python-version: ${{ env.PYTHON_VERSION }}
     
-    - name: Install Dependencies
-      run: npm ci
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 black isort mypy
+    
+    - name: Run flake8
+      run: |
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 . --count --max-complexity=10 --max-line-length=120 --statistics
+    
+    - name: Run black
+      run: black --check .
+    
+    - name: Run isort
+      run: isort --check-only .
+    
+    - name: Run mypy
+      run: mypy .
+
+  test:
+    name: Run Tests
+    needs: lint
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
       
-    - name: Run Linter
-      run: npm run lint
-      
-    - name: Run Tests
-      run: npm test
-      
-    - name: Build
-      run: npm run build
-      
-  deploy:
+      redis:
+        image: redis:6
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python ${{ env.PYTHON_VERSION }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements-dev.txt
+        pip install -e .
+    
+    - name: Run unit tests
+      run: |
+        pytest tests/unit -v --cov=app --cov-report=xml
+      env:
+        DATABASE_URL: ${{ env.DATABASE_URL }}
+        REDIS_URL: ${{ env.REDIS_URL }}
+    
+    - name: Run integration tests
+      run: |
+        pytest tests/integration -v
+      env:
+        DATABASE_URL: ${{ env.DATABASE_URL }}
+        REDIS_URL: ${{ env.REDIS_URL }}
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: false
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Run Bandit
+      uses: PyCQA/bandit@master
+      with:
+        args: -r . -x tests -n 3 -lll --format json --output bandit_results.json
+    
+    - name: Upload Bandit results
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: bandit_results.json
+    
+    - name: Run Safety Check
+      run: |
+        pip install safety
+        safety check --full-report --output text > safety_report.txt
+    
+    - name: Upload Safety Report
+      uses: actions/upload-artifact@v3
+      with:
+        name: safety-report
+        path: safety_report.txt
+
+  build:
+    name: Build and Push Docker Image
+    needs: [test, security]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    
+    - name: Extract metadata (tags, labels) for Docker
+      id: meta
+      uses: docker/metadata-action@v4
+      with:
+        images: ${{ secrets.DOCKERHUB_USERNAME }}/scrambled-eggs
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=sha,format=long
+    
+    - name: Build and push
+      uses: docker/build-push-action@v3
+      with:
+        context: .
+        push: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  security-scan:
+    name: Security Scan
     needs: test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python ${{ env.PYTHON_VERSION }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Install security tools
+      run: |
+        pip install safety bandit
+    
+    - name: Run safety check
+      run: safety check --full-report
+    
+    - name: Run bandit
+      run: bandit -r app -c pyproject.toml
+
+  build-and-push:
+    name: Build and Push Docker Image
+    needs: security-scan
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    
+    - name: Login to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    
+    - name: Extract metadata (tags, labels) for Docker
+      id: meta
+      uses: docker/metadata-action@v4
+      with:
+        images: ${{ secrets.DOCKERHUB_USERNAME }}/scrambled-eggs
+        tags: |
+          type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+          type=raw,value=develop,enable=${{ github.ref == 'refs/heads/develop' }}
+          type=sha,format=long,prefix=sha-
+    
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        push: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        build-args: |
+          BUILDKIT_INLINE_CACHE=1
+    
+    - name: Image Vulnerability Scan
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ secrets.DOCKERHUB_USERNAME }}/scrambled-eggs:${{ github.sha }}
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        severity: 'CRITICAL,HIGH'
+    
+    - name: Upload SARIF report
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  deploy:
+    name: Deploy to Production
+    needs: build-and-push
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    environment: production
+    
     steps:
     - uses: actions/checkout@v3
     
-    - name: Use Node.js
-      uses: actions/setup-node@v3
+    - name: Configure SSH
+      uses: webfactory/ssh-agent@v0.7.0
       with:
-        node-version: '18'
+        ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+    
+    - name: Add known hosts
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+    
+    - name: Deploy to production server
+      env:
+        DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      run: |
+        ssh -o StrictHostKeyChecking=no \
+            ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }} << 'EOF'
+        set -e
         
-    - name: Install Dependencies
-      run: npm ci
-      
-    - name: Build
-      run: npm run build
-      
-    - name: Deploy to Production
-      uses: appleboy/ssh-action@master
-      with:
-        host: ${{ secrets.PRODUCTION_HOST }}
-        username: ${{ secrets.PRODUCTION_USER }}
-        key: ${{ secrets.SSH_PRIVATE_KEY }}
-        script: |
-          cd /var/www/scrambled-eggs
-          git pull origin main
-          npm ci --production
-          pm2 restart scrambled-eggs
+        # Update the application
+        cd /opt/scrambled-eggs
+        git fetch origin main
+        git reset --hard origin/main
+        
+        # Login to Docker Hub
+        echo $DOCKERHUB_TOKEN | docker login -u $DOCKERHUB_USERNAME --password-stdin
+        
+        # Pull and deploy
+        docker-compose -f docker-compose.prod.yml pull
+        docker-compose -f docker-compose.prod.yml up -d --build
+        
+        # Clean up
+        docker system prune -af --volumes
+        
+        # Check service status
+        docker-compose -f docker-compose.prod.yml ps
+        
+        # Update firewall rules if needed
+        sudo ufw allow 80/tcp
+        sudo ufw allow 443/tcp
+        sudo ufw allow 9090/tcp  # Prometheus
+        sudo ufw allow 3000/tcp  # Grafana
+        sudo ufw allow 9093/tcp  # Alertmanager
+        
+        # Set up fail2ban if not already installed
+        if ! command -v fail2ban-client &> /dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y fail2ban
+            sudo systemctl enable fail2ban
+            sudo systemctl start fail2ban
+        fi
+        
+        # Configure automatic security updates
+        if ! dpkg -s unattended-upgrades &> /dev/null; then
+            sudo apt-get install -y unattended-upgrades
+            echo 'Unattended-Upgrade::Automatic-Reboot "true";' | sudo tee -a /etc/apt/apt.conf.d/50unattended-upgrades
+            echo 'Unattended-Upgrade::Automatic-Reboot-Time "02:00";' | sudo tee -a /etc/apt/apt.conf.d/50unattended-upgrades
+        fi
+        
+        # Verify backup cron job
+        if ! crontab -l | grep -q "backup_database.sh"; then
+            (crontab -l 2>/dev/null; echo "0 3 * * * /opt/scrambled-eggs/scripts/backup_database.sh") | crontab -
+        fi
+        
+        # Check Prometheus retention policy
+        if [ -f /opt/scrambled-eggs/deploy/prometheus/prometheus.yml ]; then
+            if ! grep -q "retention" /opt/scrambled-eggs/deploy/prometheus/prometheus.yml; then
+                echo "  retention: 15d" | sudo tee -a /opt/scrambled-eggs/deploy/prometheus/prometheus.yml
+                # Restart Prometheus to apply changes
+                docker-compose -f /opt/scrambled-eggs/docker-compose.prod.yml restart prometheus
+            fi
+        fi
+        EOF

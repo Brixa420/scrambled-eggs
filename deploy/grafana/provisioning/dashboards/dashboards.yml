@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: 'Scrambled Eggs'
+    orgId: 1
+    folder: 'Scrambled Eggs'
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
