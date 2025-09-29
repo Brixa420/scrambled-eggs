@@ -1,15 +1,21 @@
-"""
-User model for authentication and authorization with server relationships.
-"""
+"""User model for authentication and authorization with server relationships."""
 
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING, Union, Dict, Any
 
 from passlib.context import CryptContext
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, ForeignKey, or_
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, Mapped, Session
+
+# Import models for type hints only to avoid circular imports
+if TYPE_CHECKING:
+    from .moderation import (
+        ContentViolation, UserWarning, UserSuspension, 
+        UserBan, ContentFilter, ModerationAppeal, ModerationReview
+    )
+    from .two_factor import UserTwoFactor
 
 from ..db.base import Base
 
@@ -71,31 +77,109 @@ class User(Base):
 
     # Dates
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     last_login = Column(DateTime, nullable=True)
 
     # Relationships
     # Server relationships
     owned_servers = relationship("Server", back_populates="owner", foreign_keys="Server.owner_id")
-    server_memberships = relationship("ServerMember", back_populates="user")
-    created_invites = relationship("ServerInvite", back_populates="inviter")
-
-    # Message relationships
+    # Relationships
+    servers = relationship("Server", secondary="server_members", back_populates="members")
+    owned_servers = relationship("Server", back_populates="owner")
     messages = relationship("Message", back_populates="author")
-
-    # File relationships
-    files = relationship("File", back_populates="user")
+    reactions = relationship("Reaction", back_populates="user")
+    channels = relationship("Channel", secondary="channel_members", back_populates="members")
+    two_factor = relationship("UserTwoFactor", back_populates="user", uselist=False, cascade="all, delete-orphan")
     file_shares = relationship(
         "FileShare", primaryjoin="or_(FileShare.shared_by==User.id, FileShare.shared_with==User.id)"
     )
+    
+    # Moderation relationships
+    # ... (other relationships and methods)
 
     def set_password(self, password: str):
         """Create hashed password."""
         self.hashed_password = pwd_context.hash(password)
 
-    def verify_password(self, plain_password: str) -> bool:
-        """Check hashed password."""
-        return pwd_context.verify(plain_password, self.hashed_password)
+    def verify_password(self, password: str) -> bool:
+        """Verify password."""
+        return pwd_context.verify(password, self.hashed_password)
+        
+    def has_2fa_enabled(self) -> bool:
+        """Check if 2FA is enabled for this user."""
+        return self.two_factor and self.two_factor.status == TwoFactorStatus.ACTIVE
+        
+    def get_2fa_methods(self) -> list[str]:
+        """Get list of enabled 2FA methods."""
+        if not self.two_factor:
+            return []
+        return self.two_factor.get_enabled_methods()
+        
+    def verify_2fa_code(self, code: str, method: str = "totp") -> bool:
+        """Verify a 2FA code."""
+        if not self.two_factor:
+            return False
+            
+        # Import here to avoid circular imports
+        from .two_factor import TwoFactorMethod
+        from ..services.auth.two_factor import two_factor_auth
+        
+        if method == TwoFactorMethod.TOTP and self.two_factor.totp_enabled:
+            return two_factor_auth.verify_totp(
+                self.two_factor.totp_secret,
+                code
+            )
+            
+        elif method == TwoFactorMethod.SMS and self.two_factor.sms_enabled:
+            return two_factor_auth.verify_sms_code(
+                self.id,
+                code,
+                self.two_factor.phone_number
+            )
+            
+        elif method == TwoFactorMethod.BACKUP:
+            return two_factor_auth.verify_backup_code(
+                self.id,
+                code
+            )
+            
+        return False
+        
+    def get_2fa_setup_data(self) -> Dict[str, Any]:
+        """Get data needed to set up 2FA."""
+        from ..services.auth.two_factor import two_factor_auth
+        
+        if not self.two_factor:
+            return {}
+            
+        # Generate a new TOTP secret if not set
+        if not self.two_factor.totp_secret:
+            self.two_factor.totp_secret = two_factor_auth.generate_secret()
+            
+        # Generate QR code for authenticator app
+        totp_uri = two_factor_auth.get_totp_uri(
+            self.two_factor.totp_secret,
+            self.email,
+            "Scrambled Eggs"
+        )
+        
+        # Generate backup codes if not already set
+        if not self.two_factor.backup_codes:
+            backup_codes = two_factor_auth.generate_backup_codes()
+            # Store hashed versions in the database
+            for code in backup_codes:
+                two_factor_auth.store_backup_code(
+                    self.id,
+                    code
+                )
+        else:
+            backup_codes = []
+            
+        return {
+            "totp_secret": self.two_factor.totp_secret,
+            "totp_uri": totp_uri,
+            "backup_codes": backup_codes,
+            "phone_number": self.two_factor.phone_number or ""
+        }
 
     def to_public_dict(self):
         """Return public user data (safe to expose to other users)."""
