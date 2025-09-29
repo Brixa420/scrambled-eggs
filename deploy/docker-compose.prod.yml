@@ -1,0 +1,148 @@
+version: '3.8'
+
+services:
+  # Frontend
+  frontend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.frontend
+    container_name: scrambled-eggs-frontend
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - REACT_APP_API_URL=/api
+      - REACT_APP_WS_URL=wss://${DOMAIN}/ws
+    volumes:
+      - ../build:/usr/share/nginx/html:ro
+    depends_on:
+      - nginx
+    networks:
+      - app-network
+
+  # Backend API
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.backend
+    container_name: scrambled-eggs-backend
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
+      - JWT_SECRET=${JWT_SECRET}
+      - TURN_SECRET=${TURN_SECRET}
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ../logs:/app/logs
+    depends_on:
+      - db
+      - redis
+    networks:
+      - app-network
+
+  # Signaling server
+  signaling:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.signaling
+    container_name: scrambled-eggs-signaling
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - JWT_SECRET=${JWT_SECRET}
+      - TURN_SECRET=${TURN_SECRET}
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ../logs:/app/logs
+    depends_on:
+      - redis
+    networks:
+      - app-network
+
+  # TURN server
+  turn:
+    build:
+      context: ./turn-server
+      dockerfile: Dockerfile
+    container_name: scrambled-eggs-turn
+    restart: unless-stopped
+    environment:
+      - TURN_SECRET=${TURN_SECRET}
+    ports:
+      - "3478:3478"
+      - "3478:3478/udp"
+      - "5349:5349"
+      - "5349:5349/udp"
+      - "49152-65535:49152-65535/udp"
+    cap_add:
+      - NET_ADMIN
+    networks:
+      - app-network
+
+  # Nginx reverse proxy
+  nginx:
+    image: nginx:alpine
+    container_name: scrambled-eggs-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./nginx/letsencrypt:/etc/letsencrypt
+      - ../logs/nginx:/var/log/nginx
+      - ../build:/var/www/scrambled-eggs:ro
+    depends_on:
+      - frontend
+      - backend
+      - signaling
+    networks:
+      - app-network
+
+  # PostgreSQL database
+  db:
+    image: postgres:13-alpine
+    container_name: scrambled-eggs-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../deploy/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - app-network
+
+  # Redis for caching and pub/sub
+  redis:
+    image: redis:6-alpine
+    container_name: scrambled-eggs-redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    networks:
+      - app-network
+
+  # Certbot for SSL certificates
+  certbot:
+    image: certbot/certbot
+    container_name: scrambled-eggs-certbot
+    volumes:
+      - ./nginx/letsencrypt:/etc/letsencrypt
+      - ./nginx/letsencrypt:/var/lib/letsencrypt
+    entrypoint: ""
+    command: >
+      sh -c "echo '0 0,12 * * * certbot renew --quiet --deploy-hook \"nginx -s reload\"' > /etc/cron.d/certbot && 
+             crond -f"
+    networks:
+      - app-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  app-network:
+    driver: bridge

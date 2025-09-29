@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scrambled Eggs - P2P Video Chat</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; }
+        #videos { display: flex; flex-wrap: wrap; gap: 20px; }
+        video { background: #000; width: 400px; height: 300px; }
+        #localVideo { transform: scaleX(-1); } /* Mirror local video */
+        #status { padding: 10px; margin: 10px 0; background: #f0f0f0; border-radius: 4px; }
+        .controls { margin: 20px 0; }
+        button { padding: 8px 16px; margin-right: 10px; }
+        #aiFeedback { 
+            margin-top: 20px; 
+            padding: 15px; 
+            border: 1px solid #ccc; 
+            border-radius: 4px; 
+            background: #f9f9f9;
+            min-height: 50px;
+        }
+        .security-alert {
+            color: #d32f2f;
+            font-weight: bold;
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Scrambled Eggs - Secure P2P Video Chat</h1>
+    
+    <div class="controls">
+        <input type="text" id="roomId" placeholder="Room ID" value="scrambled-room">
+        <input type="text" id="peerId" placeholder="Your ID" value="peer" + Math.floor(Math.random() * 1000)>
+        <button id="startBtn">Start Call</button>
+        <button id="hangupBtn" disabled>Hang Up</button>
+    </div>
+    
+    <div id="status">Status: Not connected</div>
+    
+    <div id="videos">
+        <div>
+            <h3>You</h3>
+            <video id="localVideo" autoplay muted playsinline></video>
+        </div>
+        <div>
+            <h3>Remote</h3>
+            <video id="remoteVideo" autoplay playsinline></video>
+        </div>
+    </div>
+    
+    <div id="aiFeedback">
+        <h3>Clippy AI Security Assistant</h3>
+        <div id="aiMessages">Ready to secure your connection...</div>
+    </div>
+
+    <script>
+        // Configuration
+        const SIGNALING_SERVER = 'ws://localhost:8080';
+        const ICE_SERVERS = [
+            { urls: 'stun:stun.l.google.com:19302' },
+            // Add TURN servers here if needed
+        ];
+
+        // DOM Elements
+        const localVideo = document.getElementById('localVideo');
+        const remoteVideo = document.getElementById('remoteVideo');
+        const statusDiv = document.getElementById('status');
+        const startBtn = document.getElementById('startBtn');
+        const hangupBtn = document.getElementById('hangupBtn');
+        const aiMessages = document.getElementById('aiMessages');
+        
+        // WebRTC variables
+        let localStream;
+        let peerConnection;
+        let socket;
+        let roomId;
+        let peerId;
+        let remotePeerId;
+
+        // Initialize
+        startBtn.addEventListener('click', startCall);
+        hangupBtn.addEventListener('click', hangUp);
+
+        // Clippy AI Security Assistant
+        const clippyAI = {
+            analyzeConnection: (pc) => {
+                if (!pc) return;
+                
+                // Check ICE connection state
+                if (pc.iceConnectionState) {
+                    clippyAI.log(`ICE Connection State: ${pc.iceConnectionState}`, 'info');
+                    
+                    if (pc.iceConnectionState === 'connected') {
+                        clippyAI.checkSecurityMetrics(pc);
+                    }
+                }
+                
+                // Check signaling state
+                if (pc.signalingState) {
+                    clippyAI.log(`Signaling State: ${pc.signalingState}`, 'info');
+                }
+            },
+            
+            checkSecurityMetrics: async (pc) => {
+                try {
+                    const stats = await pc.getStats();
+                    let hasRelayCandidates = false;
+                    let hasStunCandidates = false;
+                    
+                    stats.forEach(report => {
+                        // Check for relay candidates (TURN)
+                        if (report.type === 'local-candidate' && 
+                            (report.candidateType === 'relay' || 
+                             report.relayProtocol === 'tls' || 
+                             report.relayProtocol === 'tcp')) {
+                            hasRelayCandidates = true;
+                        }
+                        
+                        // Check for STUN candidates
+                        if (report.type === 'local-candidate' && 
+                            report.candidateType === 'srflx') {
+                            hasStunCandidates = true;
+                        }
+                        
+                        // Log encryption information if available
+                        if (report.type === 'transport' && report.dtlsCipher) {
+                            clippyAI.log(`DTLS Cipher: ${report.dtlsCipher}`, 'info');
+                        }
+                    });
+                    
+                    // Provide security feedback
+                    if (hasRelayCandidates) {
+                        clippyAI.log("✅ Secure: Using TURN relay for NAT traversal", 'success');
+                    } else if (hasStunCandidates) {
+                        clippyAI.log("⚠️ Warning: Direct peer connection detected. For better security, use TURN relay.", 'warning');
+                    } else {
+                        clippyAI.log("❌ Warning: No STUN/TURN candidates found. Connection may fail.", 'error');
+                    }
+                    
+                } catch (error) {
+                    console.error('Error checking security metrics:', error);
+                    clippyAI.log(`Error analyzing connection: ${error.message}`, 'error');
+                }
+            },
+            
+            log: (message, type = 'info') => {
+                const timestamp = new Date().toLocaleTimeString();
+                const messageElement = document.createElement('div');
+                messageElement.textContent = `[${timestamp}] ${message}`;
+                
+                if (type === 'error') {
+                    messageElement.className = 'security-alert';
+                } else if (type === 'warning') {
+                    messageElement.style.color = '#ff9800';
+                } else if (type === 'success') {
+                    messageElement.style.color = '#4caf50';
+                }
+                
+                aiMessages.prepend(messageElement);
+                console.log(`[ClippyAI] ${message}`);
+                
+                // Keep only the last 10 messages
+                while (aiMessages.children.length > 10) {
+                    aiMessages.removeChild(aiMessages.lastChild);
+                }
+            }
+        };
+
+        // WebRTC Functions
+        async function startCall() {
+            roomId = document.getElementById('roomId').value;
+            peerId = document.getElementById('peerId').value || 'user' + Math.floor(Math.random() * 1000);
+            
+            // Update UI
+            statusDiv.textContent = 'Starting call...';
+            startBtn.disabled = true;
+            hangupBtn.disabled = false;
+            
+            try {
+                // Get local media stream
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    audio: true,
+                    video: true
+                });
+                
+                localVideo.srcObject = localStream;
+                clippyAI.log("Local media stream acquired", 'success');
+                
+                // Connect to signaling server
+                await connectToSignalingServer();
+                
+            } catch (error) {
+                console.error('Error starting call:', error);
+                statusDiv.textContent = `Error: ${error.message}`;
+                clippyAI.log(`Error: ${error.message}`, 'error');
+                startBtn.disabled = false;
+            }
+        }
+        
+        function connectToSignalingServer() {
+            return new Promise((resolve, reject) => {
+                socket = new WebSocket(`${SIGNALING_SERVER}?roomId=${roomId}&peerId=${peerId}`);
+                
+                socket.onopen = () => {
+                    statusDiv.textContent = 'Connected to signaling server';
+                    clippyAI.log(`Connected to signaling server as ${peerId} in room ${roomId}`, 'success');
+                    resolve();
+                };
+                
+                socket.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    reject(new Error('Failed to connect to signaling server'));
+                };
+                
+                socket.onmessage = async (event) => {
+                    const message = JSON.parse(event.data);
+                    clippyAI.log(`Received message: ${message.type}`, 'info');
+                    
+                    switch (message.type) {
+                        case 'peers-list':
+                            if (message.peers.length > 0) {
+                                // If there are peers, we'll initiate the call
+                                remotePeerId = message.peers[0]; // For simplicity, connect to the first peer
+                                await createPeerConnection();
+                                await createAndSendOffer();
+                            }
+                            break;
+                            
+                        case 'peer-connected':
+                            // A new peer joined, if we don't have a connection yet, create one
+                            if (!peerConnection && message.peerId !== peerId) {
+                                remotePeerId = message.peerId;
+                                await createPeerConnection();
+                            }
+                            break;
+                            
+                        case 'offer':
+                            if (!peerConnection) {
+                                await createPeerConnection();
+                            }
+                            await handleOffer(message);
+                            break;
+                            
+                        case 'answer':
+                            await handleAnswer(message);
+                            break;
+                            
+                        case 'ice-candidate':
+                            await handleNewICECandidate(message.candidate);
+                            break;
+                            
+                        case 'peer-disconnected':
+                            if (message.peerId === remotePeerId) {
+                                clippyAI.log(`Peer ${remotePeerId} disconnected`, 'warning');
+                                hangUp();
+                            }
+                            break;
+                    }
+                };
+            });
+        }
+        
+        async function createPeerConnection() {
+            clippyAI.log("Creating peer connection...", 'info');
+            
+            // Create a new RTCPeerConnection
+            peerConnection = new RTCPeerConnection({
+                iceServers: ICE_SERVERS
+            });
+            
+            // Add local stream to connection
+            localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, localStream);
+            });
+            
+            // Set up event handlers
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    sendMessage({
+                        type: 'ice-candidate',
+                        target: remotePeerId,
+                        candidate: event.candidate
+                    });
+                }
+            };
+            
+            peerConnection.ontrack = (event) => {
+                clippyAI.log("Remote stream received", 'success');
+                remoteVideo.srcObject = event.streams[0];
+            };
+            
+            peerConnection.oniceconnectionstatechange = () => {
+                clippyAI.log(`ICE connection state changed to: ${peerConnection.iceConnectionState}`, 'info');
+                
+                if (peerConnection.iceConnectionState === 'connected') {
+                    statusDiv.textContent = 'Connected!';
+                    clippyAI.analyzeConnection(peerConnection);
+                } else if (peerConnection.iceConnectionState === 'disconnected' ||
+                          peerConnection.iceConnectionState === 'failed') {
+                    clippyAI.log(`Connection ${peerConnection.iceConnectionState}`, 'warning');
+                    hangUp();
+                }
+            };
+            
+            // Periodically check connection stats
+            setInterval(() => {
+                if (peerConnection && peerConnection.iceConnectionState === 'connected') {
+                    clippyAI.analyzeConnection(peerConnection);
+                }
+            }, 30000); // Check every 30 seconds
+        }
+        
+        async function createAndSendOffer() {
+            try {
+                clippyAI.log("Creating offer...", 'info');
+                const offer = await peerConnection.createOffer({
+                    offerToReceiveAudio: true,
+                    offerToReceiveVideo: true
+                });
+                
+                await peerConnection.setLocalDescription(offer);
+                
+                sendMessage({
+                    type: 'offer',
+                    target: remotePeerId,
+                    sdp: offer.sdp
+                });
+                
+                clippyAI.log("Offer sent to peer", 'success');
+            } catch (error) {
+                console.error('Error creating/sending offer:', error);
+                clippyAI.log(`Error creating offer: ${error.message}`, 'error');
+            }
+        }
+        
+        async function handleOffer(message) {
+            try {
+                clippyAI.log("Received offer, creating answer...", 'info');
+                
+                await peerConnection.setRemoteDescription(new RTCSessionDescription({
+                    type: 'offer',
+                    sdp: message.sdp
+                }));
+                
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+                
+                sendMessage({
+                    type: 'answer',
+                    target: message.sender,
+                    sdp: answer.sdp
+                });
+                
+                clippyAI.log("Answer sent to peer", 'success');
+            } catch (error) {
+                console.error('Error handling offer:', error);
+                clippyAI.log(`Error handling offer: ${error.message}`, 'error');
+            }
+        }
+        
+        async function handleAnswer(message) {
+            try {
+                clippyAI.log("Received answer, setting remote description...", 'info');
+                await peerConnection.setRemoteDescription(new RTCSessionDescription({
+                    type: 'answer',
+                    sdp: message.sdp
+                }));
+                clippyAI.log("Remote description set, connection should be established", 'success');
+            } catch (error) {
+                console.error('Error handling answer:', error);
+                clippyAI.log(`Error handling answer: ${error.message}`, 'error');
+            }
+        }
+        
+        async function handleNewICECandidate(candidate) {
+            try {
+                if (candidate) {
+                    await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+                }
+            } catch (error) {
+                console.error('Error adding ICE candidate:', error);
+                clippyAI.log(`Error adding ICE candidate: ${error.message}`, 'error');
+            }
+        }
+        
+        function sendMessage(message) {
+            if (socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({
+                    ...message,
+                    roomId,
+                    from: peerId
+                }));
+            } else {
+                console.error('WebSocket is not open');
+                clippyAI.log("Error: WebSocket connection is not open", 'error');
+            }
+        }
+        
+        function hangUp() {
+            clippyAI.log("Hanging up...", 'info');
+            
+            // Close peer connection
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+            }
+            
+            // Stop local stream
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+                localVideo.srcObject = null;
+            }
+            
+            // Clear remote video
+            remoteVideo.srcObject = null;
+            
+            // Update UI
+            statusDiv.textContent = 'Call ended';
+            startBtn.disabled = false;
+            hangupBtn.disabled = true;
+            
+            clippyAI.log("Call ended", 'info');
+        }
+        
+        // Handle page unload
+        window.addEventListener('beforeunload', () => {
+            if (peerConnection) {
+                sendMessage({
+                    type: 'peer-disconnected',
+                    target: remotePeerId
+                });
+                hangUp();
+            }
+        });
+    </script>
+</body>
+</html>

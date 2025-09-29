@@ -223,12 +223,20 @@ export const AppProvider = ({ children }) => {
       updateContactStatus,
       antarcticDC: ANTARCTIC_DC,
       networkStatus,
-      refreshNetworkStatus
-    }>
+      refreshNetworkStatus,
+      notifications,
+      updateNotificationSetting,
+      toggleAntarcticNode
+    }}>
       {children}
     </AppContext.Provider>
   );
 };
+
 export const useAppContext = () => {
-  return useContext(AppContext);
+  const context = useContext(AppContext);
+  if (context === undefined) {
+    throw new Error('useAppContext must be used within an AppProvider');
+  }
+  return context;
 };

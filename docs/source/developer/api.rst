@@ -3,20 +3,94 @@
 API Documentation
 ================
 
-This document provides detailed information about the Scrambled Eggs API for developers.
+This document provides detailed information about the Scrambled Eggs API and P2P interfaces for developers.
 
-Base URL
---------
-All API endpoints are relative to the base URL:
+Base URLs
+---------
+
+REST API (for signaling and user management):
 
 .. code-block:: text
 
    https://api.scrambledeggs.example.com/v1
 
-Authentication
---------------
+P2P Protocol:
+.. code-block:: text
+
+   wss://p2p.scrambledeggs.example.com  # WebSocket signaling
+   stun:stun.scrambledeggs.example.com  # STUN server
+   turn:turn.scrambledeggs.example.com  # TURN server
+
+Authentication & Security
+-------------------------
+
+### 1. User Authentication
 
 All API requests require authentication using JSON Web Tokens (JWT).
+
+#### Obtaining a Token
+
+.. code-block:: http
+
+   POST /auth/login
+   Content-Type: application/json
+
+   {
+     "username": "user@example.com",
+     "password": "your_secure_password",
+     "device_info": {
+       "name": "John's Phone",
+       "type": "mobile"
+     }
+   }
+
+**Response**
+
+.. code-block:: json
+
+   {
+     "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+     "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+     "token_type": "bearer",
+     "expires_in": 3600,
+     "user": {
+       "id": "user_123",
+       "username": "johndoe",
+       "public_key": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----\n"
+     }
+   }
+
+#### Using the Token
+
+Include the token in the `Authorization` header:
+
+.. code-block:: http
+
+   Authorization: Bearer your_jwt_token_here
+
+### 2. End-to-End Encryption
+
+All P2P communications use Scrambled Eggs Encryption (SEE) with the following properties:
+
+- **Multi-layer encryption** with automatic key rotation
+- **Perfect forward secrecy**
+- **Post-quantum resistant** algorithms
+- **Self-healing** on breach detection
+
+### 3. Device Verification
+
+New devices must be verified through a second factor:
+
+.. code-block:: http
+
+   POST /auth/verify-device
+   Authorization: Bearer your_jwt_token_here
+   Content-Type: application/json
+
+   {
+     "device_id": "device_123",
+     "verification_code": "123456"
+   }
 
 1. **Obtaining a Token**
 

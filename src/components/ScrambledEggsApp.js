@@ -4,18 +4,7 @@ import { handleFileUpload, downloadFile } from '../utils/fileUtils';
 import Menu from './Menu';
 import AntarcticStatus from './AntarcticStatus';
 import NetworkStatus from './NetworkStatus';
-import { 
-  Send, 
-  Phone, 
-  Video, 
-  Paperclip, 
-  Shield, 
-  Settings, 
-  Search, 
-  MoreVertical,
-  Lock,
-  Users,
-  Bell,
+import {
   Eye,
   EyeOff,
   CheckCircle,
@@ -29,7 +18,6 @@ import {
   Folder,
   Key,
   Bot,
-  Menu,
   Home,
   MessageSquare,
   FileText,
@@ -37,8 +25,13 @@ import {
   Brain,
   Download,
   Upload,
-  Zap,
-  Activity
+  Activity,
+  Send, 
+  Phone, 
+  Video, 
+  Paperclip, 
+  Shield, 
+  Settings
 } from 'lucide-react';
 
 const ScrambledEggsApp = ({ onToggleClippy, onToggleAIChat }) => {

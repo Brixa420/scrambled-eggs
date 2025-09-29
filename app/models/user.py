@@ -2,32 +2,38 @@
 User model for authentication and authorization.
 """
 from datetime import datetime
-from werkzeug.security import generate_password_hash, check_password_hash
-from flask_login import UserMixin
-from ..extensions import db
+from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy.orm import relationship
+from passlib.context import CryptContext
+from ..db.base import Base
 
-class User(UserMixin, db.Model):
+# Password hashing
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+class User(Base):
     __tablename__ = 'users'
     
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(64), unique=True, nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(256), nullable=False)
-    is_admin = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    last_login = db.Column(db.DateTime)
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(64), unique=True, nullable=False, index=True)
+    email = Column(String(120), unique=True, nullable=False, index=True)
+    hashed_password = Column(String(256), nullable=False)
+    is_active = Column(Boolean, default=True)
+    is_superuser = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_login = Column(DateTime, nullable=True)
     
     # Relationships
-    messages = db.relationship('Message', backref='author', lazy='dynamic')
-    encryption_keys = db.relationship('EncryptionKey', backref='owner', lazy='dynamic')
+    # messages = relationship("Message", back_populates="author")
+    # encryption_keys = relationship("EncryptionKey", back_populates="owner")
     
-    def set_password(self, password):
+    def set_password(self, password: str):
         """Create hashed password."""
-        self.password_hash = generate_password_hash(password)
+        self.hashed_password = pwd_context.hash(password)
     
-    def check_password(self, password):
+    def verify_password(self, plain_password: str) -> bool:
         """Check hashed password."""
-        return check_password_hash(self.password_hash, password)
+        return pwd_context.verify(plain_password, self.hashed_password)
     
     def __repr__(self):
         return f'<User {self.username}>'

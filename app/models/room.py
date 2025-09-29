@@ -1,4 +1,4 @@
-""
+"""
 Room model for chat rooms.
 """
 from datetime import datetime
