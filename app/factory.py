@@ -111,9 +111,9 @@ def register_shell_context(app):
     """Register shell context objects."""
     @app.shell_context_processor
     def make_shell_context():
-        from .models.user import User
         from .models.message import Message
         from .models.room import Room
+        from .models.user import User
         
         return {
             'db': db,
@@ -126,6 +126,7 @@ def register_shell_context(app):
 def register_commands(app):
     """Register Click commands."""
     import click
+
     from .models.user import User
     
     @app.cli.command('init-db')

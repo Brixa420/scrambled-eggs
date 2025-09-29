@@ -3,10 +3,11 @@
 Setup and build the Scrambled Eggs documentation.
 """
 import os
-import sys
-import subprocess
 import shutil
+import subprocess
+import sys
 from pathlib import Path
+
 
 def run_command(command, cwd=None):
     """Run a shell command and return its output."""
@@ -19,7 +20,7 @@ def run_command(command, cwd=None):
             check=True,
             text=True,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            stderr=subprocess.PIPE,
         )
         if result.stdout:
             print(result.stdout)
@@ -34,6 +35,7 @@ def run_command(command, cwd=None):
             print(e.stderr)
         return False
 
+
 def setup_documentation():
     """Set up and build the documentation."""
     # Get the project root directory
@@ -41,13 +43,13 @@ def setup_documentation():
     docs_dir = project_root / "docs"
     source_dir = docs_dir / "source"
     build_dir = docs_dir / "_build"
-    
+
     print("Setting up documentation...")
-    
+
     # Create necessary directories
     (source_dir / "_static").mkdir(parents=True, exist_ok=True)
     (source_dir / "_templates").mkdir(exist_ok=True)
-    
+
     # Install required packages
     print("\nInstalling required packages...")
     requirements = [
@@ -56,20 +58,21 @@ def setup_documentation():
         "sphinx-copybutton>=0.3.0",
         "sphinx-tabs>=3.0.0",
         "myst-parser>=0.15.0",
-        "sphinx-autodoc-typehints>=1.12.0"
+        "sphinx-autodoc-typehints>=1.12.0",
     ]
-    
+
     for package in requirements:
         if not run_command(f"pip install {package}"):
             print(f"Failed to install {package}")
             return False
-    
+
     # Create conf.py if it doesn't exist
     conf_py = source_dir / "conf.py"
     if not conf_py.exists():
         print("\nCreating conf.py...")
         with open(conf_py, "w", encoding="utf-8") as f:
-            f.write("""# Configuration file for the Sphinx documentation builder.
+            f.write(
+                """# Configuration file for the Sphinx documentation builder.
 
 import os
 import sys
@@ -107,14 +110,16 @@ html_css_files = ['css/custom.css']
 
 # API Docs
 autodoc_mock_imports = ['tor', 'stem', 'cryptography']
-""")
-    
+"""
+            )
+
     # Create index.rst if it doesn't exist
     index_rst = source_dir / "index.rst"
     if not index_rst.exists():
         print("\nCreating index.rst...")
         with open(index_rst, "w", encoding="utf-8") as f:
-            f.write(""".. Scrambled Eggs documentation master file
+            f.write(
+                """.. Scrambled Eggs documentation master file
 
 Welcome to Scrambled Eggs
 =========================
@@ -133,14 +138,16 @@ Indices and tables
 * :ref:`genindex`
 * :ref:`modindex`
 * :ref:`search`
-""")
-    
+"""
+            )
+
     # Create a simple getting_started.rst
     getting_started = source_dir / "getting_started.rst"
     if not getting_started.exists():
         print("\nCreating getting_started.rst...")
         with open(getting_started, "w", encoding="utf-8") as f:
-            f.write(""".. _getting_started:
+            f.write(
+                """.. _getting_started:
 
 Getting Started
 ===============
@@ -172,14 +179,16 @@ Next Steps
 
 - :ref:`User Guide <user_guide>`
 - :ref:`API Reference <api>`
-""")
-    
+"""
+            )
+
     # Create a simple user_guide.rst
     user_guide = source_dir / "user_guide.rst"
     if not user_guide.exists():
         print("\nCreating user_guide.rst...")
         with open(user_guide, "w", encoding="utf-8") as f:
-            f.write(""".. _user_guide:
+            f.write(
+                """.. _user_guide:
 
 User Guide
 ==========
@@ -224,14 +233,16 @@ Common issues and solutions:
 2. **Database errors**
    - Try deleting the database file and restarting the application
    - Check file permissions
-""")
-    
+"""
+            )
+
     # Create a simple api.rst
     api = source_dir / "api.rst"
     if not api.exists():
         print("\nCreating api.rst...")
         with open(api, "w", encoding="utf-8") as f:
-            f.write(""".. _api:
+            f.write(
+                """.. _api:
 
 API Reference
 ============
@@ -263,17 +274,19 @@ Models
    :members:
    :undoc-members:
    :show-inheritance:
-""")
-    
+"""
+            )
+
     # Create custom CSS
     css_dir = source_dir / "_static" / "css"
     css_dir.mkdir(parents=True, exist_ok=True)
-    
+
     custom_css = css_dir / "custom.css"
     if not custom_css.exists():
         print("\nCreating custom.css...")
         with open(custom_css, "w", encoding="utf-8") as f:
-            f.write("""/* Custom styles for Scrambled Eggs documentation */
+            f.write(
+                """/* Custom styles for Scrambled Eggs documentation */
 
 /* Make the page content wider */
 .wy-nav-content {
@@ -305,8 +318,9 @@ Models
 .field-list dd {
     margin-bottom: 1em;
 }
-""")
-    
+"""
+            )
+
     # Build the documentation
     print("\nBuilding documentation...")
     if run_command("sphinx-build -M html . _build", cwd=str(docs_dir)):
@@ -316,6 +330,7 @@ Models
     else:
         print("\nFailed to build documentation.")
         return False
+
 
 if __name__ == "__main__":
     if setup_documentation():

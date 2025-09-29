@@ -7,12 +7,12 @@ It can update Python packages, check for security vulnerabilities, and ensure
 consistent dependency versions across development and production environments.
 """
 
-import os
-import sys
-import subprocess
-import json
-import platform
 import argparse
+import json
+import os
+import platform
+import subprocess
+import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 

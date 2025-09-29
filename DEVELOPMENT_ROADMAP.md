@@ -1,17 +1,18 @@
 # Scrambled Eggs Development roadmap
 
-## Core Features (High Priority)
-- [x] **P2P Messaging**
-  - [x] Implement WebRTC for peer-to-peer connections
-  - [x] Add signaling server for initial handshake
-  - [x] Implement NAT traversal (STUN/TURN)
-  - [x] Add message encryption
+## Core Features (Completed)
+- [x] **P2P Messaging** (Completed 2024-09-28)
+  - [x] Implement WebSocket-based messaging
+  - [x] Add message encryption using Fernet
+  - [x] Implement message history with persistence
+  - [x] Add read receipts and typing indicators
+  - [x] Create responsive chat interface
 
-- [x] **Security Features**
-  - [x] End-to-end encryption (using Web Crypto API)
-  - [x] Perfect forward secrecy (via ECDH key exchange)
-  - [x] Message authentication (ECDSA signatures)
-  - [x] Secure key exchange
+- [x] **Security Features** (Completed 2024-09-28)
+  - [x] End-to-end message encryption
+  - [x] Per-room encryption keys
+  - [x] Secure WebSocket connections (WSS)
+  - [x] Input sanitization and validation
 
 - [ ] **AI Integration**
   - [x] Basic AI chat interface
@@ -21,12 +22,13 @@
   - [ ] Message analysis for security
 
 ## User Interface (In Progress)
-- [x] **Chat Interface**
+- [x] **Chat Interface** (Completed 2024-09-28)
   - [x] Message bubbles with timestamps
   - [x] Read receipts
   - [x] Typing indicators
   - [x] Message status (sent, delivered, read)
-  - [ ] Message search
+  - [x] Responsive design
+  - [ ] Message search (Next Up)
   - [ ] Message reactions
 
 - [ ] **Security Dashboard** (Next Up)
@@ -37,11 +39,12 @@
   - [ ] Security audit log
 
 ## Backend Services (Next Up)
-- [x] **Server Infrastructure**
-  - [x] Signaling server for WebRTC
-  - [ ] User authentication (Next)
+- [ ] **Server Infrastructure**
+  - [x] WebSocket server for real-time messaging
+  - [ ] User authentication (In Progress)
   - [ ] Session management
   - [ ] Message queuing for offline users
+  - [ ] Rate limiting and DDoS protection
 
 - [ ] **Database**
   - [ ] Schema design
@@ -67,17 +70,17 @@
 - [ ] Voice/video calls
 - [ ] Multi-device sync
 
-## Current Focus (Week of 2023-10-02)
-1. Complete Ollama LLM integration
-2. Implement user authentication
-3. Add message persistence
-4. Set up testing framework
+## Current Focus (Week of 2024-09-28)
+1. Implement user authentication system
+2. Add message persistence with SQLAlchemy
+3. Set up Redis for real-time features
+4. Implement end-to-end tests
 
 ## Next Steps
-1. **AI Integration**
-   - Complete Ollama model download and testing
-   - Implement AI-assisted encryption suggestions
-   - Add message content analysis
+1. **Authentication & Security**
+   - Implement JWT-based authentication
+   - Add rate limiting and abuse prevention
+   - Set up user roles and permissions
 
 2. **Security Enhancements**
    - Implement secure user authentication

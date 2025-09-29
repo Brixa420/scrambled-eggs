@@ -6,13 +6,13 @@ This script helps install and configure the Scrambled Eggs P2P Messaging applica
 """
 
 import os
-import sys
 import platform
-import subprocess
 import shutil
+import subprocess
+import sys
 import venv
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 
 # Constants
 APP_NAME = "Scrambled Eggs"
@@ -208,7 +208,7 @@ def generate_config() -> bool:
         # Import the config module to access DEFAULTS
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         from scrambled_eggs.config import Config
-        
+
         # Create a new config with defaults
         config = Config()
         config.save()

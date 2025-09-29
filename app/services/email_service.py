@@ -3,19 +3,26 @@ Email service for sending various types of emails.
 """
 import logging
 from typing import Optional, Dict, Any, List, Union
-from flask import current_app, render_template
+from flask import current_app, render_template, has_app_context
 from flask_mail import Message
 from app.extensions import mail
 
-logger = logging.getLogger(__name__)
+# Default configuration values
+DEFAULT_CONFIG = {
+    'FRONTEND_URL': 'http://localhost:3000',
+    'APP_NAME': 'Scrambled Eggs',
+    'MAIL_DEFAULT_SENDER': 'noreply@scrambled-eggs.dev'
+}
 
+logger = logging.getLogger(__name__)
 class EmailService:
     """
     Service for sending various types of emails.
     """
     
-    @staticmethod
+    @classmethod
     def send_email(
+        cls,
         to: Union[str, List[str]],
         subject: str,
         template: str,
@@ -31,33 +38,48 @@ class EmailService:
             **template_vars: Variables to pass to the template
             
         Returns:
-            True if the email was sent successfully, False otherwise
+            bool: True if email was sent successfully, False otherwise
         """
-        if not current_app.config.get('MAIL_SERVER'):
-            logger.warning("Email not configured, not sending email")
-            return False
-        
         try:
-            # Render the email body from a template
-            html_body = render_template(f'emails/{template}.html', **template_vars)
-            text_body = render_template(f'emails/{template}.txt', **template_vars)
+            # Get configuration with fallback to defaults
+            config = {**DEFAULT_CONFIG}
+            if has_app_context():
+                config.update({
+                    'MAIL_DEFAULT_SENDER': current_app.config.get('MAIL_DEFAULT_SENDER', config['MAIL_DEFAULT_SENDER'])
+                })
             
-            # Create the email message
+            # Ensure we have a sender
+            sender = config['MAIL_DEFAULT_SENDER']
+            
+            # Create message
             msg = Message(
                 subject=subject,
+                sender=sender,
                 recipients=[to] if isinstance(to, str) else to,
-                html=html_body,
-                body=text_body
             )
             
-            # Set the sender
-            msg.sender = current_app.config.get('MAIL_DEFAULT_SENDER')
+            # Render email body from template if we have an app context
+            if has_app_context():
+                try:
+                    with current_app.app_context():
+                        msg.html = render_template(f'emails/{template}.html', **template_vars)
+                        msg.body = render_template(f'emails/{template}.txt', **template_vars)
+                except Exception as e:
+                    logger.warning(f"Could not render email template: {str(e)}")
+                    # If template rendering fails, use a simple text email
+                    msg.body = f"Please enable HTML to view this email.\n\n{template_vars}"
+            else:
+                # Fallback for non-app context
+                msg.body = f"Subject: {subject}\n\n{template_vars}"
             
-            # Send the email
-            mail.send(msg)
-            
-            logger.info(f"Email sent to {to} with subject: {subject}")
-            return True
+            # Send email if we have a mail instance
+            if mail and hasattr(mail, 'send'):
+                with current_app.app_context():
+                    mail.send(msg)
+                return True
+            else:
+                logger.warning("Mail extension not initialized, email not sent")
+                return False
             
         except Exception as e:
             logger.error(f"Failed to send email: {str(e)}", exc_info=True)
@@ -75,14 +97,23 @@ class EmailService:
         Returns:
             True if the email was sent successfully, False otherwise
         """
-        verification_url = f"{current_app.config['FRONTEND_URL']}/verify-email?token={token}"
+        # Get configuration with fallback to defaults
+        config = {**DEFAULT_CONFIG}
+        if has_app_context():
+            config.update({
+                'FRONTEND_URL': current_app.config.get('FRONTEND_URL', config['FRONTEND_URL']),
+                'APP_NAME': current_app.config.get('APP_NAME', config['APP_NAME']),
+                'MAIL_DEFAULT_SENDER': current_app.config.get('MAIL_DEFAULT_SENDER', config['MAIL_DEFAULT_SENDER'])
+            })
+        
+        verification_url = f"{config['FRONTEND_URL']}/verify-email?token={token}"
         
         return cls.send_email(
             to=email,
             subject="Verify Your Email Address",
             template='verify_email',
             verification_url=verification_url,
-            app_name=current_app.config.get('APP_NAME', 'Our App')
+            app_name=config['APP_NAME']
         )
     
     @classmethod

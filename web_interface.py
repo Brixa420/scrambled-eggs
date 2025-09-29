@@ -1,13 +1,14 @@
 """
 A simple web interface for Scrambled Eggs as an alternative to the PyQt5 GUI.
 """
-from flask import Flask, render_template_string, request, jsonify, session, redirect, url_for
+import base64
+import logging
 import os
 import sys
-import logging
-import base64
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+
+from flask import Flask, jsonify, redirect, render_template_string, request, session, url_for
 
 # Add the project root to the Python path
 sys.path.append(str(Path(__file__).parent.absolute()))
