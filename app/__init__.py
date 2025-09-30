@@ -37,8 +37,10 @@ def create_app(config_class="config.settings"):
 
         # Register blueprints
         from .api import api_bp
+        from .routes.forum import bp as forum_bp
 
         app.register_blueprint(api_bp, url_prefix="/api")
+        app.register_blueprint(forum_bp)
 
         # Register error handlers
         from .errors import init_error_handlers

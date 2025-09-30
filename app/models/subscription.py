@@ -135,30 +135,36 @@ class UserSubscription(db.Model):
             'profit_share_percent': float(self.profit_share_percent) if self.profit_share_percent else 0.0,
             'features': self.get_features(),
             'custom_perks': self.custom_perks or [],
-            'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
 
 class SubscriptionPayment(db.Model):
     """Represents a payment for a subscription or direct donation."""
-    __tablename__ = 'subscription_payments'
     
     TYPE_SUBSCRIPTION = 'subscription'
     TYPE_DONATION = 'donation'
+    PAYMENT_METHOD_STRIPE = 'stripe'
+    PAYMENT_METHOD_BRIXA = 'brixa'
+    
+    __tablename__ = 'subscription_payments'
     
     id = db.Column(db.Integer, primary_key=True)
-    payment_type = db.Column(db.String(20), default=TYPE_SUBSCRIPTION)  # subscription or donation
+    payment_type = db.Column(db.String(20), default=TYPE_SUBSCRIPTION)
+    payment_method = db.Column(db.String(20), default=PAYMENT_METHOD_STRIPE)
     subscription_id = db.Column(db.Integer, db.ForeignKey('user_subscriptions.id', ondelete='SET NULL'), nullable=True)
-    streamer_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)  # Who receives the payment
-    donor_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)  # Who made the payment
-    amount = db.Column(db.Numeric(10, 2), nullable=False)
-    admin_share = db.Column(db.Numeric(10, 2), default=0)  # 0 for donations, 10% for subscriptions
+    streamer_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    donor_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    amount = db.Column(db.Numeric(10, 2), nullable=False)  # Amount in the original currency
+    amount_brixa = db.Column(db.Numeric(24, 6), nullable=True)  # Amount in Brixa tokens (if paid with Brixa)
+    brixa_tx_hash = db.Column(db.String(100), nullable=True)  # Brixa transaction hash
+    brixa_price_usd = db.Column(db.Numeric(10, 6), nullable=True)  # Brixa price in USD at time of payment
+    admin_share = db.Column(db.Numeric(10, 2), default=0)
     creator_share = db.Column(db.Numeric(10, 2), nullable=False)
     currency = db.Column(db.String(3), default='USD')
     stripe_payment_intent_id = db.Column(db.String(100))
-    status = db.Column(db.String(20), default='pending')  # pending, succeeded, failed, etc.
-    message = db.Column(db.Text, nullable=True)  # Optional message from donor
-    is_anonymous = db.Column(db.Boolean, default=False)  # For donations
+    status = db.Column(db.String(20), default='pending')
+    message = db.Column(db.Text, nullable=True)
+    is_anonymous = db.Column(db.Boolean, default=False)
     payment_date = db.Column(db.DateTime, default=datetime.utcnow)
     payout_date = db.Column(db.DateTime)
     
@@ -167,12 +173,21 @@ class SubscriptionPayment(db.Model):
     streamer = db.relationship('User', foreign_keys=[streamer_id], backref='earnings')
     donor = db.relationship('User', foreign_keys=[donor_id], backref='donations')
     
+    @property
+    def is_brixa_payment(self) -> bool:
+        """Check if this is a Brixa payment."""
+        return self.payment_method == self.PAYMENT_METHOD_BRIXA
+    
     def to_dict(self):
         """Convert payment to dictionary."""
         return {
             'id': self.id,
             'type': self.payment_type,
+            'payment_method': self.payment_method,
             'amount': float(self.amount) if self.amount else 0.0,
+            'amount_brixa': float(self.amount_brixa) if self.amount_brixa else 0.0,
+            'brixa_tx_hash': self.brixa_tx_hash,
+            'brixa_price_usd': float(self.brixa_price_usd) if self.brixa_price_usd else 0.0,
             'currency': self.currency,
             'status': self.status,
             'is_anonymous': self.is_anonymous,

@@ -6,6 +6,7 @@ for reliable NAT traversal when direct P2P connections are not possible.
 """
 import asyncio
 import base64
+import enum
 import hashlib
 import hmac
 import logging

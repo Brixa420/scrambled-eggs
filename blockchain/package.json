@@ -1,0 +1,46 @@
+{
+    "name": "blockchain",
+    "version": "1.0.0",
+    "description": "This project demonstrates a basic Hardhat use case. It comes with a sample contract, a test for that contract, and a script that deploys that contract.",
+    "main": "index.js",
+    "scripts": {
+        "deploy": "npx hardhat run scripts/deploy.js --network localhost",
+        "verify": "npx hardhat verify",
+        "deploy:mainnet": "npx hardhat run scripts/deploy.js --network polygon",
+        "start": "node scripts/start.js",
+        "node": "npx hardhat node",
+        "deploy:testnet": "npx hardhat run scripts/deploy.js --network mumbai",
+        "test": "npx hardhat test",
+        "compile": "npx hardhat compile",
+        "upload": "node scripts/uploadVideo.js"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "devDependencies": {
+        "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+        "@openzeppelin/contracts": "^5.0.0",
+        "@openzeppelin/contracts-upgradeable": "^5.0.0",
+        "dotenv": "^17.2.3",
+        "hardhat": "^2.22.0",
+        "hardhat-deploy": "^0.12.3",
+        "hardhat-gas-reporter": "^1.0.9",
+        "solidity-coverage": "^0.8.6"
+    },
+    "dependencies": {
+        "@headlessui/react": "^2.2.9",
+        "@tailwindcss/forms": "^0.5.10",
+        "@web3-react/core": "^8.2.3",
+        "@web3-react/injected-connector": "^6.0.7",
+        "ethers": "^6.9.0",
+        "ipfs-http-client": "^56.0.3",
+        "next": "^15.5.4",
+        "react": "^19.1.1",
+        "react-dom": "^19.1.1",
+        "react-dropzone": "^14.3.8",
+        "web3": "^4.16.0"
+    },
+    "directories": {
+        "test": "test"
+    }
+}

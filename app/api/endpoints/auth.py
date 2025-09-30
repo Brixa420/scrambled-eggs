@@ -1,22 +1,26 @@
 """
-Authentication API endpoints for user registration, login, and 2FA.
+Authentication and session management API endpoints.
 """
-from datetime import timedelta
-from typing import Any, Optional
+from datetime import timedelta, datetime
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
-from ...core.config import settings
-from ...core.security import create_access_token, get_current_user
-from ...crud import crud_user
-from ...db.session import get_db
-from ...models.user import User
-from ...schemas.token import Token, TokenPayload
-from ...schemas.user import UserCreate, UserInDB, UserResponse
-from ...services.auth import auth_service, two_factor_auth
-from ...utils import (
+from app.core.config import settings
+from app.core.security import create_access_token, get_password_hash
+from app.crud import crud_user
+from app.db.session import get_db
+from app.models.session import Session as SessionModel
+from app.models.user import User
+from app.schemas.session import Session as SessionSchema, SessionCreate, SessionUpdate
+from app.schemas.token import Token, TokenPayload
+from app.schemas.user import UserCreate, UserInDB, UserResponse
+from app.services.auth import auth_service, two_factor_auth
+from app.services.session_service import SessionService
+from app.api.deps import get_current_user, get_session_service
+from app.utils import (
     generate_password_reset_token,
     send_reset_password_email,
     verify_password_reset_token,
@@ -25,18 +29,21 @@ from ...utils import (
 router = APIRouter()
 
 @router.post("/register", response_model=UserResponse)
-def register_user(
+async def register_user(
     *,
+    request: Request,
     db: Session = Depends(get_db),
     user_in: UserCreate,
+    session_service: SessionService = Depends(get_session_service),
 ) -> Any:
     """
-    Create new user.
+    Create new user and create initial session.
     """
+    # Check if user already exists
     user = crud_user.user.get_by_email(db, email=user_in.email)
     if user:
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="The user with this email already exists in the system.",
         )
     
@@ -46,55 +53,100 @@ def register_user(
     # Initialize 2FA settings
     two_factor = two_factor_auth.initialize_user_2fa(db, user.id)
     
+    # Create initial session
+    user_agent = request.headers.get("user-agent")
+    ip_address = request.client.host if request.client else None
+    
+    session = session_service.create_session(
+        user=user,
+        user_agent=user_agent,
+        ip_address=ip_address,
+        remember_me=False
+    
     # TODO: Send welcome email with verification link
     
     return user
 
-@router.post("/login", response_model=Token)
+@router.post("/login", response_model=Dict[str, Any])
 async def login(
+    request: Request,
+    response: Response,
     db: Session = Depends(get_db),
     form_data: OAuth2PasswordRequestForm = Depends(),
+    session_service: SessionService = Depends(get_session_service),
 ) -> Any:
     """
     OAuth2 compatible token login, get an access token for future requests.
     """
-    user = crud_user.user.authenticate(
+    # Authenticate user
+    user = auth_service.authenticate(
         db, email=form_data.username, password=form_data.password
     )
     if not user:
-        raise HTTPException(status_code=400, detail="Incorrect email or password")
-    elif not crud_user.user.is_active(user):
-        raise HTTPException(status_code=400, detail="Inactive user")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "bearer"},
+        )
+    
+    # Check if account is active
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Inactive user"
+        )
     
     # Check if 2FA is required
-    if user.two_factor and user.two_factor.is_active():
-        # Generate a 2FA token instead of a full access token
-        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_2FA_EXPIRE_MINUTES)
-        token_payload = TokenPayload(
-            sub=str(user.id),
-            two_fa_required=True,
-        )
+    if user.is_2fa_enabled:
+        # Generate a temporary token for 2FA verification
+        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        token_data = {
+            "sub": str(user.id),
+            "type": "2fa_required",
+            "method": "totp"  # Default method
+        }
         access_token = create_access_token(
-            data=token_payload.dict(),
-            expires_delta=access_token_expires,
+            data=token_data,
+            expires_delta=access_token_expires
         )
         
         return {
             "access_token": access_token,
             "token_type": "bearer",
-            "two_factor_required": True,
-            "two_factor_methods": user.two_factor.get_enabled_methods(),
+            "requires_2fa": True,
+            "methods_available": ["totp"],
         }
     
-    # If no 2FA required, generate a full access token
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    token_payload = TokenPayload(
-        sub=str(user.id),
-        two_fa_required=False,
+    # If 2FA is not required, create a new session
+    remember_me = form_data.scopes and "remember_me" in form_data.scopes
+    user_agent = request.headers.get("user-agent")
+    ip_address = request.client.host if request.client else None
+    
+    session = session_service.create_session(
+        user=user,
+        user_agent=user_agent,
+        ip_address=ip_address,
+        remember_me=remember_me
     )
-    access_token = create_access_token(
-        data=token_payload.dict(),
-        expires_delta=access_token_expires,
+    
+    # Set secure, HTTP-only cookie
+    response.set_cookie(
+        key="session_token",
+        value=f"Bearer {session.session_token}",
+        httponly=True,
+        secure=not settings.DEBUG,
+        samesite="lax",
+        max_age=settings.SESSION_LIFETIME if remember_me else None,
+        expires=session.expires_at if remember_me else None
+    )
+    
+    return {
+        "access_token": session.session_token,
+        "refresh_token": session.refresh_token,
+        "token_type": "bearer",
+        "user": user,
+        "expires_at": session.expires_at.isoformat(),
+    }es_delta=access_token_expires,
     )
     
     return {
@@ -103,52 +155,76 @@ async def login(
         "two_factor_required": False,
     }
 
-@router.post("/login/2fa")
+@router.post("/verify-2fa")
 async def verify_2fa(
     *,
+    request: Request,
+    response: Response,
     db: Session = Depends(get_db),
     code: str,
     method: str = "totp",
     current_user: User = Depends(get_current_user),
+    session_service: SessionService = Depends(get_session_service),
 ) -> Any:
     """
-    Verify 2FA code and return a full access token.
+    Verify 2FA code and create a new session.
     """
-    if not current_user.two_factor or not current_user.two_factor.is_active():
+    if not current_user.is_2fa_enabled:
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="2FA is not enabled for this account",
         )
     
-    # Verify the 2FA code
-    verified = two_factor_auth.verify_2fa_code(
-        db=db,
-        user=current_user,
-        code=code,
-        method=method,
-    )
-    
-    if not verified:
+    # Verify 2FA code
+    if not two_factor_auth.verify_2fa_code(db, current_user.id, code, method):
         raise HTTPException(
-            status_code=400,
-            detail="Invalid verification code",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid 2FA code",
         )
     
-    # Generate a full access token
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    token_payload = TokenPayload(
-        sub=str(current_user.id),
-        two_fa_verified=True,
+    # Create a new session
+    user_agent = request.headers.get("user-agent")
+    ip_address = request.client.host if request.client else None
+    
+    # Check if this is a remember me request
+    remember_me = False
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+        try:
+            payload = jwt.decode(
+                token,
+                settings.SECRET_KEY,
+                algorithms=[settings.JWT_ALGORITHM]
+            )
+            remember_me = payload.get("scope", "") == "remember_me"
+        except (jwt.JWTError, IndexError):
+            pass
+    
+    session = session_service.create_session(
+        user=current_user,
+        user_agent=user_agent,
+        ip_address=ip_address,
+        remember_me=remember_me
     )
-    access_token = create_access_token(
-        data=token_payload.dict(),
-        expires_delta=access_token_expires,
+    
+    # Set secure, HTTP-only cookie
+    response.set_cookie(
+        key="session_token",
+        value=f"Bearer {session.session_token}",
+        httponly=True,
+        secure=not settings.DEBUG,
+        samesite="lax",
+        max_age=settings.SESSION_LIFETIME if remember_me else None,
+        expires=session.expires_at if remember_me else None
     )
     
     return {
-        "access_token": access_token,
+        "access_token": session.session_token,
+        "refresh_token": session.refresh_token,
         "token_type": "bearer",
-        "two_factor_verified": True,
+        "user": current_user,
+        "expires_at": session.expires_at.isoformat(),
     }
 
 @router.get("/me", response_model=UserResponse)

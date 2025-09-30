@@ -1,0 +1,184 @@
+# Brixa (BXA) Core configuration file
+# Lines starting with # are comments
+
+# Network-related settings:
+
+# Run on the test network instead of the real Brixa network
+testnet=0
+
+# Run a regression test network
+regtest=0
+
+# Connect via a SOCKS5 proxy
+#proxy=127.0.0.1:9050
+
+# Bind to given address and always listen on it
+#bind=<addr>
+
+# Bind to given address and whitelist peers connecting to it
+#whitebind=<addr>
+
+# Use as many addnode= settings as you like to connect to specific peers
+#addnode=123.456.789.012
+#addnode=node.brixa.org
+
+# Connect through SOCKS5 proxy, use -noproxy to disable for all other network-related options
+#socks=5.5.5.5:1080
+
+# Use separate SOCKS5 proxy to reach peers via Tor hidden services
+#onion=5.5.5.5:1080
+
+# Accept command line and JSON-RPC commands
+server=1
+
+# Username and hashed password for JSON-RPC connections. The field <userpw> comes in the format: <USERNAME>:<SALT>$<HASH>
+#rpcuser=your_username
+#rpcpassword=your_hashed_password
+
+# Listen for JSON-RPC connections on this port
+rpcport=9332
+
+# Allow JSON-RPC connections from specified source. Valid for <ip> are a single IP (e.g. 1.2.3.4), a network/netmask (e.g. 1.2.3.4/255.255.255.0) or a network/CIDR (e.g. 1.2.3.4/24).
+#rpcallowip=127.0.0.1
+#rpcallowip=192.168.1.0/24
+
+# Send trace/debug info to console instead of debug.log file
+#debug=1
+
+# Output debugging information (default: -nodebug, supplying <category> is optional)
+#debug=<category>
+
+# Prepend debug output with timestamp (default: 1)
+#shrinkdebugfile=1
+
+# Location of the debug log
+debuglogfile=debug.log
+
+# Location of the RPC server certificate file (default: server.cert)
+#rpccookiefile=.cookie
+
+# Location of the RPC server private key (default: server.pem)
+#rpcsslprivatekeyfile=server.pem
+
+# Location of the RPC server certificate file (default: server.cert)
+#rpcsslcertificatechainfile=server.cert
+
+# Set database cache size in megabytes (4 to 16384, default: 450)
+dbcache=450
+
+# Set the number of script verification threads (1-16, 0=auto, <0=leave that many cores free, default: 0)
+par=0
+
+# Set the number of script verification threads (1-16, 0=auto, <0=leave that many cores free, default: 0)
+#par=0
+
+# Set the number of script verification threads (-4 to 16, 0 = auto, <0 = leave that many cores free, default: 0)
+#par=0
+
+# Set the number of script verification threads (1-16, 0=auto, <0=leave that many cores free, default: 0)
+#par=0
+
+# Maintain a full transaction index, used by the getrawtransaction rpc call (default: 0)
+txindex=1
+
+# Maintain coinstats index used by the gettxoutsetinfo RPC (default: 0)
+#coinstatsindex=1
+
+# Maintain a timestamp index for block hashes as they happen (default: 0)
+#timestampindex=1
+
+# Maintain coinstatsindex used by the gettxoutsetinfo RPC (default: 0)
+#coinstatsindex=1
+
+# Maintain a full address index, used to query for the balance, received and spent by an address (default: 0)
+#addressindex=1
+
+# Maintain a timestamp index for block hashes as they happen (default: 0)
+#timestampindex=1
+
+# Maintain a full spent index, used to query spending txid and input index for a given outpoint (default: 0)
+#spentindex=1
+
+# Maintain a full address position index, used to query for the balance, received and spent by an address (default: 0)
+#addrindex=1
+
+# Maintain a timestamp index for block hashes as they happen (default: 0)
+#timestampindex=1
+
+# Maintain coinstats index used by the gettxoutsetinfo RPC (default: 0)
+#coinstatsindex=1
+
+# Accept public REST requests (default: 0)
+#rest=1
+
+# Username for JSON-RPC connections
+#rpcuser=your_username_here
+
+# Password for JSON-RPC connections
+#rpcpassword=your_password_here
+
+# Accept command line and JSON-RPC commands
+server=1
+
+# Send trace/debug info to console instead of debug.log file
+#debug=1
+
+# Generate coins (default: 0)
+#gen=0
+
+# Generate coins (default: 0)
+#gen=0
+
+# Set the number of script verification threads (1-16, 0=auto, <0=leave that many cores free, default: 0)
+#par=0
+
+# Set the number of script verification threads (-4 to 16, 0 = auto, <0 = leave that many cores free, default: 0)
+#par=0
+
+# Set the number of script verification threads (1-16, 0=auto, <0=leave that many cores free, default: 0)
+#par=0
+
+# Set the number of script verification threads (-4 to 16, 0 = auto, <0 = leave that many cores free, default: 0)
+#par=0
+
+# Set the number of script verification threads (1-16, 0=auto, <0=leave that many cores free, default: 0)
+#par=0
+
+# Set the number of script verification threads (-4 to 16, 0 = auto, <0 = leave that many cores free, default: 0)
+#par=0
+
+# Set the number of script verification threads (1-16, 0=auto, <0=leave that many cores free, default: 0)
+#par=0
+
+# Set the number of script verification threads (-4 to 16, 0 = auto, <0 = leave that many cores free, default: 0)
+#par=0
+
+# Set the number of script verification threads (1-16, 0=auto, <0=leave that many cores free, default: 0)
+#par=0
+
+# Set the number of script verification threads (-4 to 16, 0 = auto, <0 = leave that many cores free, default: 0)
+#par=0
+
+# Set the number of script verification threads (1-16, 0=auto, <0=leave that many cores free, default: 0)
+#par=0
+
+# Set the number of script verification threads (-4 to 16, 0 = auto, <0 = leave that many cores free, default: 0)
+#par=0
+
+# Set the number of script verification threads (1-16, 0=auto, <0=leave that many cores free, default: 0)
+#par=0
+
+# Set the number of script verification threads (-4 to 16, 0 = auto, <0 = leave that many cores free, default: 0)
+#par=0
+
+# Set the number of script verification threads (1-16, 0=auto, <0=leave that many cores free, default: 0)
+#par=0
+
+# Set the number of script verification threads (-4 to 16, 0 = auto, <0 = leave that many cores free, default: 0)
+#par=0
+
+# Set the number of script verification threads (1-16, 0=auto, <0=leave that many cores free, default: 0)
+#par=0
+
+# Set the number of script verification threads (-4 to 16, 0 = auto, <0 = leave that many cores free, default: 0)
+#par=0

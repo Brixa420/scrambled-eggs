@@ -1,0 +1,37 @@
+{
+  "name": "brixa-p2p-node",
+  "version": "1.0.0",
+  "description": "P2P node for Brixa video streaming network",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@chainsafe/libp2p-noise": "^10.0.0",
+    "@libp2p/bootstrap": "^5.0.0",
+    "@libp2p/kad-dht": "^10.0.0",
+    "@libp2p/mplex": "^8.0.0",
+    "@libp2p/tcp": "^7.0.0",
+    "@libp2p/websockets": "^9.0.0",
+    "@multiformats/multiaddr": "^11.0.0",
+    "ipfs-core": "^0.17.0",
+    "libp2p": "^0.42.0",
+    "@libp2p/webrtc-star": "^7.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "keywords": [
+    "p2p",
+    "libp2p",
+    "ipfs",
+    "brixa",
+    "video-streaming"
+  ]
+}

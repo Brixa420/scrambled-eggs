@@ -1,0 +1,41 @@
+{
+  "name": "scrambled-eggs-encryption",
+  "version": "1.0.0",
+  "description": "Scrambled Eggs Encryption - A multi-layered encryption system with AI-driven security escalation",
+  "main": "scrambled_eggs.js",
+  "type": "module",
+  "scripts": {
+    "test": "mocha test/**/*.test.js --timeout 30000",
+    "test:watch": "mocha test/**/*.test.js --watch --timeout 30000",
+    "test:coverage": "c8 mocha test/**/*.test.js --timeout 30000",
+    "benchmark": "node test/benchmark.js",
+    "lint": "eslint .",
+    "security": "npm audit"
+  },
+  "dependencies": {
+    "@types/node": "^20.5.0"
+  },
+  "devDependencies": {
+    "c8": "^8.0.0",
+    "chai": "^5.0.0",
+    "eslint": "^8.0.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-mocha": "^10.0.0",
+    "esm": "^3.2.25",
+    "mocha": "^10.0.0",
+    "prettier": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "keywords": [
+    "encryption",
+    "security",
+    "aes-256",
+    "multi-layer",
+    "quantum-resistant",
+    "scrambled-eggs"
+  ],
+  "author": "Brixa Team",
+  "license": "MIT"
+}
