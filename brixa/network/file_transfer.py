@@ -1,7 +1,8 @@
 """
 P2P File Transfer Protocol for Brixa Network.
 
-This module implements secure, resumable file transfers between peers.
+This module implements secure, resumable file transfers between peers with
+optimizations for speed, reliability, and preview generation.
 """
 import os
 import hashlib
@@ -9,26 +10,54 @@ import asyncio
 import json
 import time
 import math
-from typing import Dict, Optional, Tuple, BinaryIO, AsyncGenerator, Union, List
+import imghdr
+import mimetypes
+from typing import Dict, Optional, Tuple, BinaryIO, AsyncGenerator, Union, List, Any
 from pathlib import Path
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
+from typing import Optional, Dict, Any, List, Union, Tuple, BinaryIO, AsyncGenerator
 import logging
 import aiohttp
+import aiofiles
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.backends import default_backend
-from collections import deque
+from collections import deque, defaultdict
 import statistics
 import pickle
+import zlib
+import io
 from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor
+
+# For file preview generation
+try:
+    from PIL import Image, ImageOps
+    HAS_PILLOW = True
+except ImportError:
+    HAS_PILLOW = False
+    
+# For video/audio previews
+try:
+    import cv2
+    import numpy as np
+    HAS_OPENCV = True
+except ImportError:
+    HAS_OPENCV = False
 
 logger = logging.getLogger(__name__)
 
 # Constants
-DEFAULT_CHUNK_SIZE = 64 * 1024  # 64KB initial chunk size
-MIN_CHUNK_SIZE = 16 * 1024     # 16KB minimum chunk size
-MAX_CHUNK_SIZE = 1024 * 1024   # 1MB maximum chunk size
+DEFAULT_CHUNK_SIZE = 256 * 1024  # 256KB initial chunk size (increased for better throughput)
+MIN_CHUNK_SIZE = 16 * 1024      # 16KB minimum chunk size
+MAX_CHUNK_SIZE = 4 * 1024 * 1024 # 4MB maximum chunk size (increased for high-speed networks)
 MAX_FILE_SIZE = 1024 * 1024 * 1024 * 10  # 10GB max file size
+MAX_PREVIEW_SIZE = 10 * 1024 * 1024  # 10MB max file size for preview generation
+PREVIEW_IMAGE_SIZE = (320, 240)  # Default preview image dimensions
+CHUNK_QUEUE_SIZE = 100  # Number of chunks to buffer for sending
+MAX_PARALLEL_CHUNKS = 8  # Maximum number of chunks to transfer in parallel
+COMPRESSION_THRESHOLD = 1024  # Minimum size (in bytes) to consider compression
+COMPRESSION_LEVEL = 6  # Default zlib compression level (1-9)
 
 # Transfer priority levels
 PRIORITY_LOW = 0
@@ -185,6 +214,112 @@ class FileTransfer:
             logger.debug(f"Adjusting chunk size from {self.chunk_size} to {new_size} bytes")
             self.chunk_size = new_size
 
+    @dataclass
+    class FilePreview:
+        """Represents a preview of a file for UI display."""
+        file_name: str
+        file_type: str
+        file_size: int
+        preview_data: Optional[bytes] = None
+        mime_type: Optional[str] = None
+        dimensions: Optional[Tuple[int, int]] = None
+        duration: Optional[float] = None  # For audio/video
+        text_preview: Optional[str] = None  # For text files
+        
+        def to_dict(self) -> Dict[str, Any]:
+            """Convert preview to a dictionary for serialization."""
+            return {
+                'file_name': self.file_name,
+                'file_type': self.file_type,
+                'file_size': self.file_size,
+                'mime_type': self.mime_type,
+                'dimensions': self.dimensions,
+                'duration': self.duration,
+                'text_preview': self.text_preview[:500] + '...' if self.text_preview and len(self.text_preview) > 500 else self.text_preview,
+                'has_preview': self.preview_data is not None
+            }
+
+    async def generate_file_preview(self, file_path: Union[str, Path]) -> Optional[FilePreview]:
+        """Generate a preview for a file.
+        
+        Args:
+            file_path: Path to the file
+            
+        Returns:
+            FilePreview object or None if preview cannot be generated
+        """
+        file_path = Path(file_path)
+        if not file_path.exists() or not file_path.is_file():
+            return None
+            
+        mime_type, _ = mimetypes.guess_type(file_path)
+        if mime_type is None:
+            mime_type = 'application/octet-stream'
+            
+        file_size = file_path.stat().st_size
+        preview = FilePreview(mime_type=mime_type, size=file_size)
+        
+        # Don't generate previews for very large files
+        if file_size > MAX_PREVIEW_SIZE:
+            return preview
+            
+        try:
+            # Handle image previews
+            if mime_type.startswith('image/') and HAS_PILLOW:
+                with Image.open(file_path) as img:
+                    preview.width, preview.height = img.size
+                    
+                    # Generate thumbnail
+                    img.thumbnail(PREVIEW_IMAGE_SIZE)
+                    with io.BytesIO() as output:
+                        img.save(output, format='JPEG', quality=85)
+                        preview.thumbnail = output.getvalue()
+                        
+            # Handle video previews
+            elif mime_type.startswith('video/') and HAS_OPENCV:
+                cap = cv2.VideoCapture(str(file_path))
+                if cap.isOpened():
+                    preview.width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    preview.height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    preview.duration = cap.get(cv2.CAP_PROP_FRAME_COUNT) / max(1, cap.get(cv2.CAP_PROP_FPS))
+                    
+                    # Get a frame from the middle of the video
+                    middle_frame = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) / 2)
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, middle_frame)
+                    ret, frame = cap.read()
+                    if ret:
+                        # Convert BGR to RGB
+                        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        img = Image.fromarray(frame)
+                        img.thumbnail(PREVIEW_IMAGE_SIZE)
+                        with io.BytesIO() as output:
+                            img.save(output, format='JPEG', quality=85)
+                            preview.thumbnail = output.getvalue()
+                cap.release()
+                
+            # Handle text files
+            elif mime_type.startswith('text/') or mime_type in [
+                'application/json', 
+                'application/xml', 
+                'application/x-yaml'
+            ]:
+                try:
+                    async with aiofiles.open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+                        preview.text_preview = (await f.read(2048))  # First 2KB of text
+                except (UnicodeDecodeError, OSError):
+                    pass
+                    
+            # Handle audio files
+            elif mime_type.startswith('audio/'):
+                # Extract basic metadata
+                preview.metadata['type'] = 'audio'
+                
+        except Exception as e:
+            logger.warning(f"Failed to generate preview for {file_path}: {e}")
+            
+        return preview
+
+
 class FileTransferManager:
     """Manages file transfers between peers with optimization features."""
     
@@ -218,11 +353,15 @@ class FileTransferManager:
         self.network_conditions = {
             'latency': 0.1,  # seconds
             'packet_loss': 0.0,  # 0-1
+            'bandwidth': 1_000_000,  # 1Mbps initial estimate
             'last_updated': 0
         }
         
         # Transfer queue (priority-based)
         self.transfer_queue: List[Tuple[int, float, str]] = []  # (priority, timestamp, file_id)
+        
+        # Thread pool for CPU-intensive operations
+        self.thread_pool = ThreadPoolExecutor(max_workers=4)
         
         # Start background tasks
         self.cleanup_task = asyncio.create_task(self._cleanup_inactive_transfers())
@@ -234,13 +373,16 @@ class FileTransferManager:
         self.p2p_node.register_message_handler("file_request", self._handle_file_request)
         self.p2p_node.register_message_handler("file_chunk", self._handle_file_chunk)
         self.p2p_node.register_message_handler("file_ack", self._handle_file_ack)
+        self.p2p_node.register_message_handler("transfer_resume", self._handle_transfer_resume)
     
     async def send_file(self, 
                       peer_id: str, 
                       file_path: Union[str, Path], 
                       encrypt: bool = True,
                       priority: int = PRIORITY_NORMAL,
-                      chunk_size: int = DEFAULT_CHUNK_SIZE) -> str:
+                      chunk_size: int = DEFAULT_CHUNK_SIZE,
+                      generate_preview: bool = True,
+                      compress: bool = True) -> str:
         """Initiate sending a file to a peer with transfer optimization.
         
         Args:
@@ -249,6 +391,8 @@ class FileTransferManager:
             encrypt: Whether to encrypt the file
             priority: Transfer priority (PRIORITY_LOW, PRIORITY_NORMAL, PRIORITY_HIGH)
             chunk_size: Initial chunk size in bytes (will be adjusted dynamically)
+            generate_preview: Whether to generate a file preview
+            compress: Whether to enable compression for the transfer
             
         Returns:
             str: Transfer ID for tracking progress

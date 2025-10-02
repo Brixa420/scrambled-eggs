@@ -1,0 +1,6 @@
+# E2EE Dependencies
+cryptography>=41.0.0
+pycryptodome>=3.18.0
+python-dotenv>=1.0.0
+asyncio>=3.4.3
+python-dateutil>=2.8.2

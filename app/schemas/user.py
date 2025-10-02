@@ -1,7 +1,7 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, validator, conint
 
 
 class UserBase(BaseModel):
@@ -9,6 +9,7 @@ class UserBase(BaseModel):
 
     email: EmailStr
     username: str = Field(..., min_length=3, max_length=64, regex="^[a-zA-Z0-9_]+$")
+    role_id: Optional[int] = None
 
 
 class UserCreate(UserBase):
@@ -38,6 +39,31 @@ class UserUpdate(BaseModel):
     password: Optional[str] = Field(None, min_length=8, max_length=128)
 
 
+class RoleBase(BaseModel):
+    """Base role schema."""
+    id: int
+    name: str
+    description: Optional[str] = None
+    is_default: bool = False
+
+    class Config:
+        orm_mode = True
+
+class PermissionBase(BaseModel):
+    """Base permission schema."""
+    id: int
+    name: str
+    description: Optional[str] = None
+    resource: str
+    action: str
+
+    class Config:
+        orm_mode = True
+
+class Role(RoleBase):
+    """Role schema with permissions."""
+    permissions: List[PermissionBase] = []
+
 class UserInDBBase(UserBase):
     """Base schema for user stored in the database."""
 
@@ -47,18 +73,17 @@ class UserInDBBase(UserBase):
     created_at: datetime
     updated_at: datetime
     last_login: Optional[datetime] = None
+    role: Optional[Role] = None
 
     class Config:
         orm_mode = True
 
 
-class User(UserInDBBase):
     """Schema for returning user data (without sensitive info)."""
 
 
 class UserInDB(UserInDBBase):
     """Schema for user data in the database."""
-
     hashed_password: str
 
 
@@ -67,6 +92,11 @@ class UserLogin(BaseModel):
 
     email: EmailStr
     password: str
+
+
+class UserRoleUpdate(BaseModel):
+    """Schema for updating a user's role."""
+    role_id: int = Field(..., gt=0, description="ID of the role to assign to the user")
 
 
 class Token(BaseModel):
@@ -80,3 +110,5 @@ class TokenData(BaseModel):
     """Schema for token data."""
 
     username: Optional[str] = None
+    user_id: Optional[int] = None
+    is_superuser: bool = False

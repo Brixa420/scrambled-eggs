@@ -48,8 +48,12 @@ htmlcov/
 nosetests.xml
 coverage.xml
 *.cover
+
+# Allow specific test scripts
+!test_wake_word.py
 .hypothesis/
 .pytest_cache/
+!test_*.py
 
 # Translations
 *.mo

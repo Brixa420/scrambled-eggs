@@ -1,9 +1,20 @@
 """
-Blockchain package for Clippy's memory system.
-This package contains the core blockchain implementation for storing and managing Clippy's memories.
+Brixa Blockchain Core
+
+This package provides the core functionality for the Brixa blockchain,
+including block creation, mining, and validation.
 """
 
 from .block import Block, create_genesis_block
 from .blockchain import Blockchain, get_blockchain
+from .miner import BrixaMiner
+from .validator import BrixaValidator
 
-__all__ = ['Block', 'create_genesis_block', 'Blockchain', 'get_blockchain']
+__all__ = [
+    'Block',
+    'Blockchain',
+    'BrixaMiner',
+    'BrixaValidator',
+    'create_genesis_block',
+    'get_blockchain'
+]

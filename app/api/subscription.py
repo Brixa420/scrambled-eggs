@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Body
+from fastapi import APIRouter, Depends, HTTPException, status, Body, Request
 from fastapi.responses import JSONResponse
 from typing import List, Optional, Dict, Any
 import logging
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN
 
 from app.core.security import get_current_user, get_current_streamer
 from app.models.user import User
@@ -13,6 +13,7 @@ from app.models.subscription import (
     SubscriptionPayment
 )
 from app.services.subscription_service import subscription_service
+from app.services.brixa_service import brixa_service
 from app import db
 
 router = APIRouter(prefix="/subscriptions", tags=["subscriptions"])
@@ -42,37 +43,63 @@ async def initialize_plans(current_user: User = Depends(get_current_user)):
     }
 
 @router.get("/plans")
-async def list_plans(include_inactive: bool = False):
+async def list_plans(include_inactive: bool = False, request: Request = None):
     """
-    List all available subscription plans.
+    List all available subscription plans with current Brixa prices.
     
     Args:
         include_inactive: Include inactive plans in the results (admin only)
     """
-    query = SubscriptionPlan.query
-    if not include_inactive:
-        query = query.filter_by(is_active=True)
-    
-    plans = query.order_by(SubscriptionPlan.price).all()
-    
-    return {
-        'status': 'success',
-        'plans': [{
-            'id': plan.id,
-            'tier': plan.tier,
-            'name': plan.name,
-            'description': plan.description,
-            'price': float(plan.price),
-            'is_active': plan.is_active,
-            'features': plan.default_features,
-            'customization_options': getattr(plan, 'customization_options', []) if plan.tier == 'elite' else []
-        } for plan in plans]
-    }
+    try:
+        query = SubscriptionPlan.query
+        
+        if not include_inactive:
+            query = query.filter_by(is_active=True)
+            
+        plans = query.order_by(SubscriptionPlan.price).all()
+        
+        # Get current Brixa price in USD
+        brixa_price = await brixa_service.get_brixa_price_usd()
+        
+        # Prepare plan data with Brixa prices
+        plan_data = []
+        for plan in plans:
+            plan_dict = plan.to_dict()
+            
+            # Add Brixa price information
+            if brixa_price and brixa_price > 0:
+                plan_dict['brixa_price'] = str((Decimal(str(plan.price)) / brixa_price).quantize(Decimal('0.000001'), rounding=ROUND_DOWN))
+                plan_dict['brixa_price_usd'] = str(brixa_price.quantize(Decimal('0.000001'), rounding=ROUND_DOWN))
+            else:
+                plan_dict['brixa_price'] = None
+                plan_dict['brixa_price_usd'] = None
+                
+            plan_data.append(plan_dict)
+        
+        # Add Brixa wallet address for payments (if configured)
+        brixa_wallet_address = getattr(settings, 'BRIXA_RECEIVING_ADDRESS', None)
+        
+        response_data = {
+            'status': 'success',
+            'data': plan_data,
+            'brixa_wallet_address': brixa_wallet_address
+        }
+        
+        return response_data
+        
+    except Exception as e:
+        logger.error(f"Error listing subscription plans: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while retrieving subscription plans"
+        )
 
 @router.post("/subscribe")
 async def subscribe(
     tier: str = Body(..., embed=True),
-    payment_method_id: str = Body(..., embed=True),
+    payment_method: str = Body('stripe', embed=True),
+    payment_method_id: str = Body(None, embed=True),
+    brixa_tx_hash: str = Body(None, embed=True),
     custom_perks: Optional[List[str]] = Body(default=None, embed=True),
     current_user: User = Depends(get_current_streamer)
 ):
@@ -81,50 +108,88 @@ async def subscribe(
     
     Args:
         tier: The subscription tier (basic, premium, elite)
-        payment_method_id: Stripe payment method ID
+        payment_method: Payment method ('stripe' or 'brixa')
+        payment_method_id: Required for Stripe payments (payment method ID) or Brixa (wallet address)
+        brixa_tx_hash: Required for Brixa payments (transaction hash)
         custom_perks: List of custom perks (for elite tier)
     """
-    # Check if user already has an active subscription
-    active_sub = UserSubscription.query.filter_by(
-        user_id=current_user.id,
-        status='active'
-    ).first()
-    
-    if active_sub:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You already have an active subscription"
+    try:
+        # Validate payment method
+        valid_payment_methods = [
+            SubscriptionPayment.PAYMENT_METHOD_STRIPE,
+            SubscriptionPayment.PAYMENT_METHOD_BRIXA
+        ]
+        
+        if payment_method not in valid_payment_methods:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid payment method. Must be one of: {', '.join(valid_payment_methods)}"
+            )
+        
+        # Validate payment method specific fields
+        if payment_method == SubscriptionPayment.PAYMENT_METHOD_STRIPE and not payment_method_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Payment method ID is required for Stripe payments"
+            )
+            
+        if payment_method == SubscriptionPayment.PAYMENT_METHOD_BRIXA and not brixa_tx_hash:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Transaction hash is required for Brixa payments"
+            )
+        
+        # Get the subscription plan
+        plan = SubscriptionPlan.query.filter_by(tier=tier.lower(), is_active=True).first()
+        if not plan:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid subscription tier: {tier}"
+            )
+        
+        # For elite tier, validate custom perks
+        if tier.lower() == 'elite' and custom_perks:
+            # In a real implementation, you might want to validate the custom perks
+            # against a list of allowed perks or have some validation logic
+            pass
+        
+        # Process the subscription payment
+        success, message, subscription = await subscription_service.process_subscription_payment(
+            user=current_user,
+            plan=plan,
+            payment_method=payment_method,
+            payment_method_id=payment_method_id,
+            is_anonymous=False,  # For now, all subscriptions are public
+            brixa_tx_hash=brixa_tx_hash
         )
-    
-    # Create subscription
-    subscription, error = await subscription_service.create_subscription(
-        user_id=current_user.id,
-        plan_tier=tier,
-        payment_method_id=payment_method_id,
-        custom_perks=custom_perks
-    )
-    
-    if error:
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=message
+            )
+        
+        # If this is an elite subscription with custom perks, update them
+        if tier.lower() == 'elite' and custom_perks:
+            subscription.custom_perks = custom_perks
+            db.session.commit()
+        
+        return {
+            'status': 'success',
+            'message': message,
+            'subscription': subscription.to_dict()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error subscribing to {tier}: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=error
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while processing your subscription: {str(e)}"
         )
-    
-    if not subscription:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to create subscription"
-        )
-    
-    return {
-        'status': 'success',
-        'subscription_id': subscription.id,
-        'message': 'Subscription created successfully',
-        'requires_action': False,
-        'payment_intent_secret': None
-    }
 
-@router.post("/cancel-subscription")
+@router.delete("/{subscription_id}")
 async def cancel_subscription(
     subscription_id: int,
     current_user: User = Depends(get_current_user)

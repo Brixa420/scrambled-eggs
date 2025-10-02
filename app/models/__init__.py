@@ -13,10 +13,14 @@ from .room import Room
 
 # Import all models here to ensure they are registered with SQLAlchemy
 from .user import User
+from .role import Role
+from .permission import Permission
 
 # This ensures that SQLAlchemy is aware of all models
 __all__ = [
     "User",
+    "Role",
+    "Permission",
     "Message",
     "EncryptionKey",
     "File",

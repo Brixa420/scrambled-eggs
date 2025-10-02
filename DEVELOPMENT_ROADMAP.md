@@ -1,82 +1,61 @@
-# Scrambled Eggs Development roadmap
+# Scrambled Eggs Development Roadmap
 
 ## Core Features (Completed)
 - [x] **P2P Messaging** (Completed 2024-09-28)
-  - [x] Implement WebSocket-based messaging
   - [x] Add message encryption using Fernet
   - [x] Implement message history with persistence
   - [x] Add read receipts and typing indicators
   - [x] Create responsive chat interface
 
-- [x] **Security Features** (Completed 2024-09-28)
-  - [x] End-to-end message encryption
-  - [x] Per-room encryption keys
-  - [x] Secure WebSocket connections (WSS)
-  - [x] Input sanitization and validation
+- [x] **Security Features (Completed)
+- [x] End-to-end message encryption
+- [x] Per-room encryption keys
+- [x] Secure WebSocket connections (WSS)
+- [x] Input sanitization and validation
+- [x] Proof of Work consensus mechanism (Completed 2025-09-30)
+  - [x] Multi-threaded mining
+  - [x] Block validation
+  - [x] Difficulty adjustment
+  - [x] Coinbase transaction handling
 
 - [ ] **AI Integration**
   - [x] Basic AI chat interface
   - [x] Local LLM setup (Ollama)
   - [ ] Complete model download and testing
-  - [ ] AI-assisted message encryption
-  - [ ] Message analysis for security
-
-## User Interface (In Progress)
-- [x] **Chat Interface** (Completed 2024-09-28)
-  - [x] Message bubbles with timestamps
-  - [x] Read receipts
-  - [x] Typing indicators
-  - [x] Message status (sent, delivered, read)
-  - [x] Responsive design
-  - [ ] Message search (Next Up)
-  - [ ] Message reactions
-
-- [ ] **Security Dashboard** (Next Up)
-  - [x] Connection status
-  - [x] Encryption status
+{{ ... }}
   - [ ] Network health monitoring
   - [ ] Threat detection
   - [ ] Security audit log
 
-## Backend Services (Next Up)
-- [ ] **Server Infrastructure**
-  - [x] WebSocket server for real-time messaging
-  - [ ] User authentication (In Progress)
-  - [ ] Session management
-  - [ ] Message queuing for offline users
-  - [ ] Rate limiting and DDoS protection
+## Backend Services (In Progress)
+- [ ] **Blockchain Infrastructure (In Progress)
+- [x] **Blockchain Core** (Completed 2025-09-30)
+  - [x] Block structure and serialization
+  - [x] Transaction handling
+  - [x] Merkle tree implementation
+  - [x] Proof of Work consensus
+  - [x] Difficulty adjustment algorithm
+
+- [ ] **Wallet & Transactions** (Next Up)
+  - [ ] Key pair generation
+  - [ ] Transaction signing
+  - [ ] UTXO management
+  - [ ] Transaction validation
+
+- [ ] **Networking** (Planned)
+  - [ ] Peer discovery
+  - [ ] Block propagation
+  - [ ] Transaction relay
+  - [ ] Network synchronization
+
+- [ ] **Smart Contracts** (Planned)
+  - [ ] Virtual machine
+  - [ ] Contract deployment
+  - [ ] Execution environment
+  - [ ] Gas metering
 
 - [ ] **Database**
-  - [ ] Schema design
-  - [ ] Encrypted storage
-  - [ ] Message history
-  - [ ] User profiles
-
-## Testing & Quality Assurance
-- [ ] Unit tests
-- [ ] Integration tests
-- [ ] Security audits
-- [ ] Performance testing
-
-## Deployment
-- [ ] Production build setup
-- [ ] CI/CD pipeline
-- [ ] Monitoring
-- [ ] Documentation
-
-## Future Enhancements
-- [ ] File sharing
-- [ ] Group chats
-- [ ] Voice/video calls
-- [ ] Multi-device sync
-
-## Current Focus (Week of 2024-09-28)
-1. Implement user authentication system
-2. Add message persistence with SQLAlchemy
-3. Set up Redis for real-time features
-4. Implement end-to-end tests
-
-## Next Steps
+{{ ... }}
 1. **Authentication & Security**
    - Implement JWT-based authentication
    - Add rate limiting and abuse prevention

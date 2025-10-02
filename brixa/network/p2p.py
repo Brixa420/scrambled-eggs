@@ -1682,10 +1682,14 @@ class P2PNode:
             if peer.peer_id in self.peers:
                 del self.peers[peer.peer_id]
             raise
-                                if p['host'] != self.host or p['port'] != self.port:
-                                    self.peers.add(Peer(host=p['host'], port=p['port']))
+
+        try:
+            # Process peer list from registration response
+            for p in peer_list:
+                if p['host'] != self.host or p['port'] != self.port:
+                    self.peers.add(Peer(host=p['host'], port=p['port']))
         except Exception as e:
-            logger.warning(f"Failed to register with {peer.host}:{peer.port}: {e}")
+            logger.warning(f"Failed to process peer list from {peer.host}:{peer.port}: {e}")
     
     async def broadcast_block(self, block_data: Dict) -> None:
         """Broadcast a new block to all peers."""

@@ -1,8 +1,8 @@
 import stripe
 import logging
 from datetime import datetime, timedelta
-from decimal import Decimal
-from typing import Dict, Optional, List, Tuple
+from decimal import Decimal, ROUND_DOWN
+from typing import Dict, Optional, List, Tuple, Any
 
 from app import db
 from app.models.subscription import (
@@ -13,6 +13,7 @@ from app.models.subscription import (
 )
 from app.core.config import settings
 from app.models.user import User
+from app.services.brixa_service import brixa_service
 
 logger = logging.getLogger(__name__)
 
